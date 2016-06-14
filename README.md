@@ -3,6 +3,8 @@ A Vim Plugin for Allen Webster's [4coder](https://4coder.handmade.network/).
 
 Very much a work-in-progress! Any and all contributions are welcome, including issues, feedback, and pull requests.
 
+Use it by adding `#include "4coder_vim.cpp"` at the top of your own 4coder custom file, and then defining the necessary callback functions and making the necessary hook calls. See `4coder_chronal.cpp` for an example of how it should be used.
+
 ## Known bugs
   - Movement by word is incorrect
   - 4coder-native menus (e.g. filesystem browser) use default 4coder-style bindings
