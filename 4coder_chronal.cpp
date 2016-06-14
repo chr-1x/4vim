@@ -103,12 +103,17 @@ HOOK_SIG(chronal_file_settings){
         else if (match(ext, make_lit_string("c"))) treat_as_code = 1;
         else if (match(ext, make_lit_string("hpp"))) treat_as_code = 1;
     }
-
+    
+#if 0
     push_parameter(app, par_buffer_id, buffer.buffer_id);
     push_parameter(app, par_lex_as_cpp_file, treat_as_code);
     push_parameter(app, par_wrap_lines, !treat_as_code);
     exec_command(app, cmdid_set_settings);
-
+#endif
+    
+    app->buffer_set_setting(app, &buffer, BufferSetting_Lex, treat_as_code);
+    app->buffer_set_setting(app, &buffer, BufferSetting_WrapLine, !treat_as_code);
+    
     exec_command(app, enter_normal_mode);
 
     // NOTE(chronister): Be sure to call the vim custom's hook!

@@ -176,9 +176,13 @@ static void set_current_keymap(struct Application_Links* app, int map) {
         buffer = app->get_parameter_buffer(app, 0);
     }
     if (!buffer.exists) { return; }
+    
+#if 0
     push_parameter(app, par_buffer_id, buffer.buffer_id);
     push_parameter(app, par_key_mapid, map);
     exec_command(app, cmdid_set_settings);
+#endif
+    app->buffer_set_setting(app, &buffer, BufferSetting_MapID, map);
 }
 
 static char get_cursor_char(struct Application_Links* app, int offset = 0) {
@@ -330,7 +334,8 @@ void vim_exec_action(struct Application_Links* app, Range range)
             Vim_Register* target_register = state.registers + state.yank_register;
             target_register->is_line = is_line;
             copy_into_register(app, &buffer, range, state.registers + state.yank_register);
-
+            
+            // TODO(allen): I need to move the clipboard into the general API
             push_parameter(app, par_range_start, range.start);
             push_parameter(app, par_range_end, range.end);
             exec_command(app, cmdid_cut);
@@ -461,8 +466,13 @@ CUSTOM_COMMAND_SIG(move_forward_word_start){
     view = app->get_active_view(app);
 
     int pos1 = view.cursor.pos;
+    
+#if 0
     push_parameter(app, par_flags, BoundryAlphanumeric);
     exec_command(app, cmdid_seek_right);
+#endif
+    basic_seek(app, true, BoundryAlphanumeric);
+    
     exec_command(app, move_right);
     app->refresh_view(app, &view);
     int pos2 = view.cursor.pos;
@@ -475,8 +485,13 @@ CUSTOM_COMMAND_SIG(move_backward_word_start){
     view = app->get_active_view(app);
 
     int pos1 = view.cursor.pos;
+    
+#if 0
     push_parameter(app, par_flags, BoundryToken | BoundryWhitespace);
     exec_command(app, cmdid_seek_left);
+#endif
+    basic_seek(app, false, BoundryToken | BoundryWhitespace);
+    
     app->refresh_view(app, &view);
     int pos2 = view.cursor.pos;
 
@@ -489,8 +504,13 @@ CUSTOM_COMMAND_SIG(move_forward_word_end){
 
     int pos1 = view.cursor.pos;
     exec_command(app, move_right);
+    
+#if 0
     push_parameter(app, par_flags, BoundryWhitespace);
     exec_command(app, cmdid_seek_right);
+#endif
+    basic_seek(app, true, BoundryWhitespace);
+    
     app->refresh_view(app, &view);
     int pos2 = view.cursor.pos;
     exec_command(app, move_left);
@@ -802,8 +822,12 @@ CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
         remove_last_folder(&file_name);
         append(&file_name, make_string(short_file_name, size));
         
+#if 0
         push_parameter(app, par_name, expand_str(file_name));
         exec_command(app, cmdid_interactive_open);
+#endif
+        
+        app->view_open_file(app, &view, expand_str(file_name), false);
     }
 }
 
@@ -912,9 +936,14 @@ VIM_COMMAND_FUNC_SIG(write_file) {
         exec_command(app, cmdid_save);
     }
     else {
+#if 0
         push_parameter(app, par_buffer_id, view.buffer_id);
         push_parameter(app, par_save_update_name, expand_str(argstr));
         exec_command(app, cmdid_save);
+#endif
+        
+        Buffer_Summary buffer = app->get_buffer(app, view.buffer_id);
+        app->buffer_save(app, &buffer, expand_str(argstr));
     }
 }
 
