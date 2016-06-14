@@ -335,10 +335,12 @@ void vim_exec_action(struct Application_Links* app, Range range)
             target_register->is_line = is_line;
             copy_into_register(app, &buffer, range, state.registers + state.yank_register);
             
-            // TODO(allen): I need to move the clipboard into the general API
+#if 0
             push_parameter(app, par_range_start, range.start);
             push_parameter(app, par_range_end, range.end);
             exec_command(app, cmdid_cut);
+#endif
+            clipboard_cut(app, range.start, range.end, 0);
         } break;
 
         case vimaction_yank_range: {

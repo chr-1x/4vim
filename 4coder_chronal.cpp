@@ -196,4 +196,13 @@ void chronal_get_bindings(Bind_Helper *context) {
     //  so that this isn't an issue.
 }
 
-
+extern "C" int
+get_bindings(void *data, int size){
+    Bind_Helper context_ = begin_bind_helper(data, size);
+    Bind_Helper *context = &context_;
+    
+    chronal_get_bindings(context);
+    
+    int result = end_bind_helper(context);
+    return(result);
+}
