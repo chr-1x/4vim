@@ -197,7 +197,7 @@ void chronal_get_bindings(Bind_Helper *context) {
 }
 
 extern "C" int
-get_bindings(void *data, int size){
+get_bindings(void *data, int size) {
     Bind_Helper context_ = begin_bind_helper(data, size);
     Bind_Helper *context = &context_;
     

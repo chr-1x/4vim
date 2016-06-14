@@ -234,7 +234,10 @@ static void update_visual_range(struct Application_Links* app, int end_new) {
     Range normalized = make_range(state.selection_cursor.start, state.selection_cursor.end);
     state.selection_range = make_range(normalized.start, normalized.end + 1);
     app->view_set_highlight(app, &view, normalized.start, normalized.end + 1, true);
-    app->refresh_view(app, &view);
+    
+    // NOTE(allen): We don't need this, it's basically equivalent to a "get" call.
+    // I want to eliminate it somehow.
+    //app->refresh_view(app, &view);
 }
 
 static void update_visual_line_range(struct Application_Links* app, int end_new) {
@@ -246,7 +249,8 @@ static void update_visual_line_range(struct Application_Links* app, int end_new)
     state.selection_range = make_range(get_line_start(app, normalized.start), 
                                        get_line_end(app, normalized.end) + 1);
     app->view_set_highlight(app, &view, state.selection_range.start, state.selection_range.end, true);
-    app->refresh_view(app, &view);
+    
+    //app->refresh_view(app, &view);
 }
 
 static void end_visual_selection(struct Application_Links* app) {
@@ -256,7 +260,8 @@ static void end_visual_selection(struct Application_Links* app) {
     state.selection_range.start = state.selection_range.end = -1;
     state.selection_cursor.start = state.selection_cursor.end = -1;
     app->view_set_highlight(app, &view, 0, 0, false);
-    app->refresh_view(app, &view);
+    
+    //app->refresh_view(app, &view);
 }
 
 static int push_to_string(char* str, size_t str_len, size_t str_max,
