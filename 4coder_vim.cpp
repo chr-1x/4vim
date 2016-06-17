@@ -13,30 +13,6 @@
 #include <string.h>
 #include <stdio.h>
 
-/* Known Bugs:
- *  - Movement by word is incorrect
- *  - 4coder-native menus (e.g. filesystem browser) use default 4coder-style bindings
- *  - In certain situations, status bars can build up at the top of the screen
- *
- * Overview of missing features:
- *  - Movement-chords appending to chord bar
- *  - Making chord bar show up all the time to avoid jitter
- *  - Missing movements
- *      - rfind and rtil
- *      - %
- *      - Search acting as a movement
- *      - {, }, (, )
- *      - ^
- *      - * (search under cursor)
- *  - Format chordmode
- *  - Visual block mode
- *  - G chords
- *  - Rest of the window chords
- *  - Multiple marks
- *  - Shittons of statusbar commands
- *  - Macros
- */
-
 enum Vim_Maps {
     mapid_unbound = mapid_global,
     mapid_movements = 80000,
@@ -286,7 +262,150 @@ static void end_chord_bar(struct Application_Links* app) {
     }
 }
 
-CUSTOM_COMMAND_SIG(enter_normal_mode){
+static void clear_register_selection() {
+    state.yank_register = state.paste_register = reg_unnamed;
+}
+
+static int
+buffer_seek_next_word(Application_Links* app, Buffer_Summary* buffer, int pos) {
+	char chunk[1024];
+	int chunk_size = sizeof(chunk);
+	Stream_Chunk stream = {};
+    
+	if (init_stream_chunk(&stream, app, buffer, pos, chunk, chunk_size)) {
+        char cursorch = stream.data[pos];
+        char nextch = cursorch; 
+        int still_looping = true;
+        bool inter_whitespace = false;
+        do {
+            for (; pos < stream.end; ++pos) {
+                // Three kinds of characters:
+                //  - word characters, first of a row results in a stop
+                //  - symbol characters, first of a row results in a stop
+                //  - whitespace characters, always skip
+                //  The distinction between the first two is only needed
+                //   because word and symbol characters do not form a "row"
+                //   when intermixed.
+                nextch = stream.data[pos];
+                int is_whitespace = char_is_whitespace(nextch);
+                int is_alphanum = char_is_alpha_numeric(nextch);
+                int is_symbol = !is_whitespace && !is_alphanum;
+
+                if (char_is_whitespace(cursorch)) {
+                    if (!is_whitespace) {
+                        return pos;
+                    }
+                }
+                else if (char_is_alpha_numeric(cursorch)) {
+                    if (is_whitespace) {
+                        inter_whitespace = true;
+                    }
+                    else if (is_symbol ||
+                             (is_alphanum && inter_whitespace)) {
+                        return pos;
+                    }
+                }
+                else {
+                    if (is_whitespace) {
+                        inter_whitespace = true;
+                    }
+                    if (is_alphanum ||
+                        (is_symbol && inter_whitespace)) {
+                        return pos;
+                    }
+                }
+            }
+            still_looping = forward_stream_chunk(&stream);
+        } while (still_looping);
+
+        if (pos > buffer->size) {
+            pos = buffer->size;
+        }
+    }
+
+    return pos;
+}
+
+static int
+buffer_seek_nonalphanumeric_right(Application_Links* app, Buffer_Summary* buffer, int pos) {
+	char chunk[1024];
+	int chunk_size = sizeof(chunk);
+	Stream_Chunk stream = {};
+    
+	if (init_stream_chunk(&stream, app, buffer, pos, chunk, chunk_size)) {
+        char cursorch = stream.data[pos];
+        char nextch = cursorch; 
+        int still_looping = true;
+        do {
+            for (; pos < stream.end; ++pos) {
+                // Three kinds of characters:
+                //  - word characters, first of a row results in a stop
+                //  - symbol characters, first of a row results in a stop
+                //  - whitespace characters, always skip
+                //  The distinction between the first two is only needed
+                //   because word and symbol characters do not form a "row"
+                //   when intermixed.
+                nextch = stream.data[pos];
+                if (!char_is_alpha_numeric(nextch)) {
+                    return pos;
+                }
+            }
+            still_looping = forward_stream_chunk(&stream);
+        } while (still_looping);
+
+        if (pos > buffer->size) {
+            pos = buffer->size;
+        }
+    }
+
+    return pos;
+}
+
+static int
+buffer_seek_nonalphanumeric_left(Application_Links* app, Buffer_Summary* buffer, int pos) {
+	char chunk[1024];
+	int chunk_size = sizeof(chunk);
+	Stream_Chunk stream = {};
+    
+	if (init_stream_chunk(&stream, app, buffer, pos, chunk, chunk_size)) {
+        char cursorch = stream.data[pos];
+        char nextch = cursorch; 
+        int still_looping = true;
+        do {
+            for (; pos >= stream.start; --pos) {
+                // Three kinds of characters:
+                //  - word characters, first of a row results in a stop
+                //  - symbol characters, first of a row results in a stop
+                //  - whitespace characters, always skip
+                //  The distinction between the first two is only needed
+                //   because word and symbol characters do not form a "row"
+                //   when intermixed.
+                nextch = stream.data[pos];
+                if (!char_is_alpha_numeric(nextch)) {
+                    return pos;
+                }
+            }
+            still_looping = backward_stream_chunk(&stream);
+        } while (still_looping);
+
+        if (pos > buffer->size) {
+            pos = buffer->size;
+        }
+    }
+
+    return pos;
+}
+
+static Range get_word_under_cursor(struct Application_Links* app, Buffer_Summary* buffer, View_Summary* view) {
+    int pos, start, end;
+    pos = view->cursor.pos;
+    start = buffer_seek_nonalphanumeric_right(app, buffer, pos);
+    end = buffer_seek_nonalphanumeric_left(app, buffer, pos);
+
+    return make_range(start, end);
+}
+
+CUSTOM_COMMAND_SIG(enter_normal_mode_with_register) {
     if (state.mode == mode_visual ||
         state.mode == mode_visual_line) {
         end_visual_selection(app);
@@ -294,11 +413,16 @@ CUSTOM_COMMAND_SIG(enter_normal_mode){
 
     state.action = vimaction_none;
     state.mode = mode_normal;
-    end_chord_bar(app);
 
     set_current_keymap(app, mapid_normal);
 
     on_enter_normal_mode(app);
+}
+
+CUSTOM_COMMAND_SIG(enter_normal_mode){
+    exec_command(app, enter_normal_mode_with_register);
+    clear_register_selection();
+    end_chord_bar(app);
 }
 
 void copy_into_register(struct Application_Links* app, Buffer_Summary* buffer, Range range, Vim_Register* target_register)
@@ -373,12 +497,14 @@ void vim_exec_action(struct Application_Links* app, Range range)
 CUSTOM_COMMAND_SIG(enter_insert_mode){
     state.mode = mode_insert;
     set_current_keymap(app, mapid_insert);
+    clear_register_selection();
     on_enter_insert_mode(app);
 }
 
 CUSTOM_COMMAND_SIG(enter_replace_mode){
     state.mode = mode_replace;
     set_current_keymap(app, mapid_replace);
+    clear_register_selection();
     on_enter_replace_mode(app);
 }
 
@@ -389,21 +515,24 @@ CUSTOM_COMMAND_SIG(enter_visual_mode){
     update_visual_range(app, state.selection_cursor.end);
 
     set_current_keymap(app, mapid_visual);
+    clear_register_selection();
     on_enter_visual_mode(app);
 }
 
 CUSTOM_COMMAND_SIG(enter_visual_line_mode){
     exec_command(app, enter_visual_mode);
     state.mode = mode_visual_line;
+    clear_register_selection();
     update_visual_line_range(app, state.selection_cursor.end);
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_replace_single){
     set_current_keymap(app, mapid_chord_replace_single);
+    clear_register_selection();
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_switch_registers){
-    set_current_keymap(app, mapid_chord_move_til);
+    set_current_keymap(app, mapid_chord_choose_register);
 
     push_to_chord_bar(app, "\"");
 }
@@ -455,19 +584,20 @@ CUSTOM_COMMAND_SIG(compound_move_command){
 #define vim_move_whitespace_down compound_move_command<seek_whitespace_down>
 #define vim_move_to_top compound_move_command<seek_top_of_file>
 #define vim_move_to_bottom compound_move_command<seek_bottom_of_file>
+#define vim_move_click compound_move_command<click_set_cursor>
 
 CUSTOM_COMMAND_SIG(move_forward_word_start){
     View_Summary view;
     view = app->get_active_view(app);
+    Buffer_Summary buffer = app->get_buffer(app, view.locked_buffer_id);
 
-    int pos1 = view.cursor.pos;
-    push_parameter(app, par_flags, BoundryAlphanumeric);
-    exec_command(app, cmdid_seek_right);
-    exec_command(app, move_right);
+    int pos = view.cursor.pos;
+
+    int new_pos = buffer_seek_next_word(app, &buffer, pos);
+    app->view_set_cursor(app, &view, seek_pos(new_pos), true);
     app->refresh_view(app, &view);
-    int pos2 = view.cursor.pos;
 
-    vim_exec_action(app, make_range(pos1, pos2));
+    vim_exec_action(app, make_range(pos, new_pos));
 }
 
 CUSTOM_COMMAND_SIG(move_backward_word_start){
@@ -721,6 +851,7 @@ CUSTOM_COMMAND_SIG(paste_before){
     app->buffer_replace_range(app, &buffer, pos1, pos1, reg->text.str, reg->text.size);
     exec_command(app, move_left);
     exec_command(app, seek_beginning_of_line);
+    clear_register_selection();
 }
 
 CUSTOM_COMMAND_SIG(paste_after){
@@ -740,6 +871,7 @@ CUSTOM_COMMAND_SIG(paste_after){
     app->buffer_replace_range(app, &buffer, pos1, pos1, reg->text.str, reg->text.size);
     exec_command(app, move_left);
     exec_command(app, seek_beginning_of_line);
+    clear_register_selection();
 }
 
 CUSTOM_COMMAND_SIG(visual_delete) {
@@ -762,13 +894,12 @@ CUSTOM_COMMAND_SIG(select_register) {
     if (regid == reg_unnamed) {
         exec_command(app, enter_normal_mode);
     }
-    // NOTE(chronister): Right now, yank_register is in a union with paste_register
-    // so only one needs to be set.
-    state.yank_register = regid;
+
+    state.yank_register = state.paste_register = regid;
     char str[2] = { (char)trigger.key.character, '\0' };
     push_to_chord_bar(app, str);
 
-    exec_command(app, enter_normal_mode);
+    exec_command(app, enter_normal_mode_with_register);
 }
 
 CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
@@ -804,6 +935,42 @@ CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
         
         push_parameter(app, par_name, expand_str(file_name));
         exec_command(app, cmdid_interactive_open);
+    }
+}
+
+//TODO(chronister): This will search for weird things like whitespace and symbols if that's what the cursor is over.
+//Should ignore if not on an alphanumeric character.
+CUSTOM_COMMAND_SIG(search_under_cursor) {
+    View_Summary view;
+    Buffer_Summary buffer;
+
+    view = app->get_active_view(app);
+    buffer = app->get_buffer(app, view.locked_buffer_id);
+    if (!buffer.exists) return;
+
+    Range word = get_word_under_cursor(app, &buffer, &view);
+    char* wordStr = (char*)malloc(word.end - word.start);
+    app->buffer_read_range(app, &buffer, word.start, word.end, wordStr);
+
+    int new_pos = view.cursor.pos;
+
+    buffer_seek_string_forward(app, &buffer, view.cursor.pos + 1,
+                               wordStr, word.end - word.start, &new_pos);
+    if (new_pos < buffer.size && new_pos >= 0) {
+        app->view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
+        app->refresh_view(app, &view);
+        free(wordStr);
+        return;
+    }
+    else {
+        buffer_seek_string_forward(app, &buffer, 0,
+                                   wordStr, word.end - word.start, &new_pos);
+        if (new_pos < buffer.size && new_pos >= 0) {
+            app->view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
+            app->refresh_view(app, &view);
+        }
+        free(wordStr);
+        return;
     }
 }
 
@@ -1024,6 +1191,8 @@ void vim_get_bindings(Bind_Helper *context) {
 
     bind(context, 'G', MDFR_NONE, vim_move_to_bottom);
 
+    bind(context, key_mouse_left, MDFR_NONE, vim_move_click);
+
     // Include status command thingy here so that you can do commands in any non-inserty mode
     bind(context, ':', MDFR_NONE, status_command);
     end_map(context);
@@ -1068,14 +1237,16 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, 'm', MDFR_NONE, set_mark);
     bind(context, '`', MDFR_NONE, cursor_mark_swap);
 
+    bind(context, '"', MDFR_NONE, enter_chord_switch_registers);
+
     bind(context, 'd', MDFR_NONE, enter_chord_delete);
     bind(context, 'y', MDFR_NONE, enter_chord_yank);
     bind(context, 'g', MDFR_NONE, enter_chord_g);
     bind(context, 'w', MDFR_CTRL, enter_chord_window);
     bind(context, 'D', MDFR_NONE, delete_line);
     bind(context, 'Y', MDFR_NONE, yank_line);
-    //TODO(chronister): ask allen for impl or figure out how to seek to end of file
-    //bind(context, 'G', MDFR_NONE, cmdid_seek_end_of_file);
+
+    bind(context, '*', MDFR_NONE, search_under_cursor);
 
     end_map(context);
 
