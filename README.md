@@ -6,9 +6,9 @@ Very much a work-in-progress! Any and all contributions are welcome, including i
 Use it by adding `#include "4coder_vim.cpp"` at the top of your own 4coder custom file, and then defining the necessary callback functions and making the necessary hook calls. See `4coder_chronal.cpp` for an example of how it should be used.
 
 ## Known bugs
-  - Movement by word is incorrect
   - 4coder-native menus (e.g. filesystem browser) use default 4coder-style bindings
-  - In certain situations, status bars can build up at the top of the screen
+  - Append ('a') will go to the next line if at the end of a line
+  - Can't do most actions on null buffers
 
 ## Overview of missing features
 There are a ton of missing features. Here's the big ones:
