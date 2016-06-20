@@ -170,10 +170,11 @@ static Vim_State state = {};
  *                 */
 
 static void set_current_keymap(struct Application_Links* app, int map) {
-    View_Summary view = app->get_active_view(app);
-    Buffer_Summary buffer = app->get_buffer(app, view.locked_buffer_id);
+    unsigned int access = AccessAll;
+    View_Summary view = app->get_active_view(app, access);
+    Buffer_Summary buffer = app->get_buffer(app, view.buffer_id, access);
     if (!buffer.exists) {
-        buffer = app->get_parameter_buffer(app, 0);
+        buffer = app->get_parameter_buffer(app, 0, access);
     }
     if (!buffer.exists) { return; }
     
@@ -188,8 +189,10 @@ static void set_current_keymap(struct Application_Links* app, int map) {
 static char get_cursor_char(struct Application_Links* app, int offset = 0) {
     Buffer_Summary buffer;
     View_Summary view;
-    view = app->get_active_view(app);
-    buffer = app->get_buffer(app, view.buffer_id);
+    
+    unsigned int access = AccessOpen;
+    view = app->get_active_view(app, access);
+    buffer = app->get_buffer(app, view.buffer_id, access);
     
     int res;
     char read; 
@@ -200,13 +203,16 @@ static char get_cursor_char(struct Application_Links* app, int offset = 0) {
 
 static int get_cursor_pos(struct Application_Links* app) {
     View_Summary view;
-    view = app->get_active_view(app);
+    
+    unsigned int access = AccessAll;
+    view = app->get_active_view(app, access);
     return view.cursor.pos;
 }
 
 static int get_line_start(struct Application_Links* app, int cursor = -1) {
-    View_Summary view = app->get_active_view(app);
-    Buffer_Summary buffer = app->get_buffer(app, view.locked_buffer_id);
+    unsigned int access = AccessAll;
+    View_Summary view = app->get_active_view(app, access);
+    Buffer_Summary buffer = app->get_buffer(app, view.buffer_id, access);
     if (cursor == -1) {
         cursor = view.cursor.pos;
     }
@@ -216,8 +222,9 @@ static int get_line_start(struct Application_Links* app, int cursor = -1) {
 }
 
 static int get_line_end(struct Application_Links* app, int cursor = -1) {
-    View_Summary view = app->get_active_view(app);
-    Buffer_Summary buffer = app->get_buffer(app, view.locked_buffer_id);
+    unsigned int access = AccessAll;
+    View_Summary view = app->get_active_view(app, access);
+    Buffer_Summary buffer = app->get_buffer(app, view.buffer_id, access);
     if (cursor == -1) {
         cursor = view.cursor.pos;
     }
@@ -228,7 +235,9 @@ static int get_line_end(struct Application_Links* app, int cursor = -1) {
 
 static void update_visual_range(struct Application_Links* app, int end_new) {
     View_Summary view;
-    view = app->get_active_view(app);
+    
+    unsigned int access = AccessOpen;
+    view = app->get_active_view(app, access);
 
     state.selection_cursor.end = end_new;
     Range normalized = make_range(state.selection_cursor.start, state.selection_cursor.end);
@@ -242,7 +251,9 @@ static void update_visual_range(struct Application_Links* app, int end_new) {
 
 static void update_visual_line_range(struct Application_Links* app, int end_new) {
     View_Summary view;
-    view = app->get_active_view(app);
+    
+    unsigned int access = AccessOpen;
+    view = app->get_active_view(app, access);
 
     state.selection_cursor.end = end_new;
     Range normalized = make_range(state.selection_cursor.start, state.selection_cursor.end);
@@ -255,7 +266,9 @@ static void update_visual_line_range(struct Application_Links* app, int end_new)
 
 static void end_visual_selection(struct Application_Links* app) {
     View_Summary view;
-    view = app->get_active_view(app);
+    
+    unsigned int access = AccessOpen;
+    view = app->get_active_view(app, access);
 
     state.selection_range.start = state.selection_range.end = -1;
     state.selection_cursor.start = state.selection_cursor.end = -1;
@@ -323,8 +336,10 @@ void vim_exec_action(struct Application_Links* app, Range range)
 {
     Buffer_Summary buffer;
     View_Summary view;
-    view = app->get_active_view(app);
-    buffer = app->get_buffer(app, view.buffer_id);
+    
+    unsigned int access = AccessOpen;
+    view = app->get_active_view(app, access);
+    buffer = app->get_buffer(app, view.buffer_id, access);
 
     switch (state.action) {
         case vimaction_delete_range: {
@@ -345,7 +360,7 @@ void vim_exec_action(struct Application_Links* app, Range range)
             push_parameter(app, par_range_end, range.end);
             exec_command(app, cmdid_cut);
 #endif
-            clipboard_cut(app, range.start, range.end, 0);
+            clipboard_cut(app, range.start, range.end, 0, access);
         } break;
 
         case vimaction_yank_range: {
@@ -435,13 +450,15 @@ CUSTOM_COMMAND_SIG(replace_character_then_normal) {
 }
 
 CUSTOM_COMMAND_SIG(seek_top_of_file) {
-    View_Summary view = app->get_active_view(app);
+    unsigned int access = AccessProtected;
+    View_Summary view = app->get_active_view(app, access);
     app->view_set_cursor(app, &view, seek_pos(0), true);
 }
 
 CUSTOM_COMMAND_SIG(seek_bottom_of_file) {
-    View_Summary view = app->get_active_view(app);
-    Buffer_Summary buffer = app->get_buffer(app, view.locked_buffer_id);
+    unsigned int access = AccessProtected;
+    View_Summary view = app->get_active_view(app, access);
+    Buffer_Summary buffer = app->get_buffer(app, view.buffer_id, access);
     app->view_set_cursor(app, &view, seek_pos(buffer.size), true);
 }
 
@@ -449,7 +466,9 @@ template <CUSTOM_COMMAND_SIG(command)>
 CUSTOM_COMMAND_SIG(compound_move_command){
     View_Summary view;
     int pos1, pos2;
-    view = app->get_active_view(app);
+    
+    unsigned int access = AccessProtected;
+    view = app->get_active_view(app, access);
     
     pos1 = view.cursor.pos;
     exec_command(app, command);
@@ -470,7 +489,9 @@ CUSTOM_COMMAND_SIG(compound_move_command){
 
 CUSTOM_COMMAND_SIG(move_forward_word_start){
     View_Summary view;
-    view = app->get_active_view(app);
+    
+    unsigned int access = AccessProtected;
+    view = app->get_active_view(app, access);
 
     int pos1 = view.cursor.pos;
     
@@ -489,7 +510,9 @@ CUSTOM_COMMAND_SIG(move_forward_word_start){
 
 CUSTOM_COMMAND_SIG(move_backward_word_start){
     View_Summary view;
-    view = app->get_active_view(app);
+    
+    unsigned int access = AccessProtected;
+    view = app->get_active_view(app, access);
 
     int pos1 = view.cursor.pos;
     
@@ -507,7 +530,9 @@ CUSTOM_COMMAND_SIG(move_backward_word_start){
 
 CUSTOM_COMMAND_SIG(move_forward_word_end){
     View_Summary view;
-    view = app->get_active_view(app);
+    
+    unsigned int access = AccessOpen;
+    view = app->get_active_view(app, access);
 
     int pos1 = view.cursor.pos;
     exec_command(app, move_right);
@@ -597,7 +622,9 @@ CUSTOM_COMMAND_SIG(enter_chord_g){
 CUSTOM_COMMAND_SIG(move_line_exec_action){
     View_Summary view;
     int pos1, pos2;
-    view = app->get_active_view(app);
+    
+    unsigned int access = AccessProtected;
+    view = app->get_active_view(app, access);
 
     exec_command(app, seek_beginning_of_line);
     app->refresh_view(app, &view);
@@ -625,8 +652,10 @@ CUSTOM_COMMAND_SIG(seek_find_character){
     View_Summary view;
     User_Input trigger;
     int pos1, pos2;
-    view = app->get_active_view(app);
-    buffer = app->get_buffer(app, view.buffer_id);
+    
+    unsigned int access = AccessProtected;
+    view = app->get_active_view(app, access);
+    buffer = app->get_buffer(app, view.buffer_id, access);
 
     trigger = app->get_command_input(app);
 
@@ -652,8 +681,10 @@ CUSTOM_COMMAND_SIG(seek_til_character){
     View_Summary view;
     User_Input trigger;
     int pos1, pos2;
-    view = app->get_active_view(app);
-    buffer = app->get_buffer(app, view.buffer_id);
+    
+    unsigned int access = AccessProtected;
+    view = app->get_active_view(app, access);
+    buffer = app->get_buffer(app, view.buffer_id, access);
 
     trigger = app->get_command_input(app);
 
@@ -679,7 +710,9 @@ CUSTOM_COMMAND_SIG(seek_til_character){
 CUSTOM_COMMAND_SIG(vim_move_up){
     View_Summary view;
     int pos1, pos2;
-    view = app->get_active_view(app);
+    
+    unsigned int access = AccessProtected;
+    view = app->get_active_view(app, access);
 
     pos1 = view.cursor.pos;
 
@@ -693,7 +726,9 @@ CUSTOM_COMMAND_SIG(vim_move_up){
 CUSTOM_COMMAND_SIG(vim_move_down){
     View_Summary view;
     int pos1, pos2;
-    view = app->get_active_view(app);
+    
+    unsigned int access = AccessProtected;
+    view = app->get_active_view(app, access);
 
     pos1 = view.cursor.pos;
 
@@ -736,8 +771,10 @@ CUSTOM_COMMAND_SIG(paste_before){
     View_Summary view;
     Buffer_Summary buffer;
     int pos1;
-    view = app->get_active_view(app);
-    buffer = app->get_buffer(app, view.buffer_id);
+    
+    unsigned int access = AccessOpen;
+    view = app->get_active_view(app, access);
+    buffer = app->get_buffer(app, view.buffer_id, access);
 
     Vim_Register* reg = state.registers + state.paste_register;
     if (reg->is_line) {
@@ -754,8 +791,10 @@ CUSTOM_COMMAND_SIG(paste_after){
     View_Summary view;
     Buffer_Summary buffer;
     int pos1;
-    view = app->get_active_view(app);
-    buffer = app->get_buffer(app, view.buffer_id);
+    
+    unsigned int access = AccessOpen;
+    view = app->get_active_view(app, access);
+    buffer = app->get_buffer(app, view.buffer_id, access);
 
     Vim_Register* reg = state.registers + state.paste_register;
     if (reg->is_line) {
@@ -805,8 +844,9 @@ CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
     char short_file_name[128];
     int pos, start, end, size;
     
-    view = app->get_active_view(app);
-    buffer = app->get_buffer(app, view.buffer_id);
+    unsigned int access = AccessProtected;
+    view = app->get_active_view(app, access);
+    buffer = app->get_buffer(app, view.buffer_id, access);
     pos = view.cursor.pos;
     buffer_seek_delimiter_forward(app, &buffer, pos + 1, '"', &end);
     buffer_seek_delimiter_backward(app, &buffer, pos, '"', &start);
@@ -834,7 +874,7 @@ CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
         exec_command(app, cmdid_interactive_open);
 #endif
         
-        app->view_open_file(app, &view, expand_str(file_name), false);
+        view_open_file(app, &view, expand_str(file_name), false);
     }
 }
 
@@ -938,7 +978,9 @@ void define_command(String command, Vim_Command_Func func) {
 VIM_COMMAND_FUNC_SIG(write_file) {
 
     View_Summary view;
-    view = app->get_active_view(app);
+
+    unsigned int access = AccessProtected;
+    view = app->get_active_view(app, access);
     if (argstr.str == NULL || argstr.size == 0) {
         exec_command(app, cmdid_save);
     }
@@ -949,8 +991,8 @@ VIM_COMMAND_FUNC_SIG(write_file) {
         exec_command(app, cmdid_save);
 #endif
         
-        Buffer_Summary buffer = app->get_buffer(app, view.buffer_id);
-        app->buffer_save(app, &buffer, expand_str(argstr));
+        Buffer_Summary buffer = app->get_buffer(app, view.buffer_id, access);
+        app->save_buffer(app, &buffer, expand_str(argstr));
     }
 }
 
