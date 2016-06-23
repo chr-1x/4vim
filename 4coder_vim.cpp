@@ -8,10 +8,11 @@
  *    if you are confused.
  */
 
-#include "4coder_default_include.cpp"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+
+#include "4coder_default_include.cpp"
 
 enum Vim_Maps {
     mapid_unbound = mapid_global,
@@ -27,6 +28,7 @@ enum Vim_Maps {
     mapid_chord_replace_single,
     mapid_chord_yank,
     mapid_chord_delete,
+    mapid_chord_format,
     mapid_chord_mark,
     mapid_chord_g,
     mapid_chord_window,
@@ -50,6 +52,7 @@ enum Pending_Action {
     vimaction_none,
 
     vimaction_delete_range,
+    vimaction_change_range,
     vimaction_yank_range,
     vimaction_format_range,
 };
@@ -425,6 +428,13 @@ CUSTOM_COMMAND_SIG(enter_normal_mode){
     end_chord_bar(app);
 }
 
+CUSTOM_COMMAND_SIG(enter_insert_mode){
+    state.mode = mode_insert;
+    set_current_keymap(app, mapid_insert);
+    clear_register_selection();
+    on_enter_insert_mode(app);
+}
+
 void copy_into_register(struct Application_Links* app, Buffer_Summary* buffer, Range range, Vim_Register* target_register)
 {
     free(target_register->text.str);
@@ -441,39 +451,43 @@ void vim_exec_action(struct Application_Links* app, Range range)
     view = app->get_active_view(app);
     buffer = app->get_buffer(app, view.buffer_id);
 
-    switch (state.action) {
-        case vimaction_delete_range: {
-            char line_test[2];
-            bool is_line = true;
-            int res; 
-            res = app->buffer_read_range(app, &buffer, range.start-1, range.start, line_test);
-            is_line = is_line && (line_test[0] == '\n' || range.start == 0);
-            res = app->buffer_read_range(app, &buffer, range.end-1, range.end, line_test);
-            is_line = is_line && (line_test[0] == '\n');
+    char line_test[2];
+    bool is_line = true;
+    int res; 
+    res = app->buffer_read_range(app, &buffer, range.start-1, range.start, line_test);
+    is_line = is_line && (line_test[0] == '\n' || range.start == 0);
+    res = app->buffer_read_range(app, &buffer, range.end-1, range.end, line_test);
+    is_line = is_line && (line_test[0] == '\n');
 
+    switch (state.action) {
+        case vimaction_delete_range: 
+        case vimaction_change_range: {
             Vim_Register* target_register = state.registers + state.yank_register;
             target_register->is_line = is_line;
+ 
             copy_into_register(app, &buffer, range, state.registers + state.yank_register);
 
             push_parameter(app, par_range_start, range.start);
             push_parameter(app, par_range_end, range.end);
             exec_command(app, cmdid_cut);
+
+            if (state.action == vimaction_change_range) {
+                exec_command(app, enter_insert_mode);
+            }
         } break;
 
         case vimaction_yank_range: {
-            //TODO(chronister): @copypasta
-            char line_test[2];
-            bool is_line = true;
-            int res; 
-            res = app->buffer_read_range(app, &buffer, range.start-1, range.start, line_test);
-            is_line = is_line && (line_test[0] == '\n' || range.start == 0);
-            res = app->buffer_read_range(app, &buffer, range.end-1, range.end, line_test);
-            is_line = is_line && (line_test[0] == '\n');
-
             Vim_Register* target_register = state.registers + state.yank_register;
             target_register->is_line = is_line;
 
             copy_into_register(app, &buffer, range, target_register);
+        } break;
+
+        case vimaction_format_range: {
+            push_parameter(app, par_range_start, range.start);
+            push_parameter(app, par_range_end, range.end - 1);
+            push_parameter(app, par_clear_blank_lines, 0);
+            exec_command(app, cmdid_auto_tab_range);
         } break;
     }
 
@@ -492,13 +506,6 @@ void vim_exec_action(struct Application_Links* app, Range range)
             set_current_keymap(app, mapid_visual);
         } break;
     }
-}
-
-CUSTOM_COMMAND_SIG(enter_insert_mode){
-    state.mode = mode_insert;
-    set_current_keymap(app, mapid_insert);
-    clear_register_selection();
-    on_enter_insert_mode(app);
 }
 
 CUSTOM_COMMAND_SIG(enter_replace_mode){
@@ -640,7 +647,14 @@ CUSTOM_COMMAND_SIG(insert_at){
 }
 
 CUSTOM_COMMAND_SIG(insert_after){
-    exec_command(app, move_right);
+    View_Summary view = app->get_active_view(app);
+    Buffer_Summary buffer = app->get_buffer(app, view.buffer_id);
+    char nextch[2];
+    int pos = view.cursor.pos;
+    app->buffer_read_range(app, &buffer, pos, pos + 1, nextch);
+    if (nextch[0] != '\n') {
+        exec_command(app, move_right);
+    }
     exec_command(app, enter_insert_mode);
 }
 
@@ -663,12 +677,28 @@ CUSTOM_COMMAND_SIG(enter_chord_delete){
     push_to_chord_bar(app, "d");
 }
 
+CUSTOM_COMMAND_SIG(enter_chord_change){
+    set_current_keymap(app, mapid_chord_delete);
+
+    state.action = vimaction_change_range;
+
+    push_to_chord_bar(app, "d");
+}
+
 CUSTOM_COMMAND_SIG(enter_chord_yank){
     set_current_keymap(app, mapid_chord_yank);
 
     state.action = vimaction_yank_range;
 
     push_to_chord_bar(app, "y");
+}
+
+CUSTOM_COMMAND_SIG(enter_chord_format){
+    set_current_keymap(app, mapid_chord_format);
+
+    state.action = vimaction_format_range;
+
+    push_to_chord_bar(app, "=");
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_window){
@@ -742,7 +772,7 @@ CUSTOM_COMMAND_SIG(seek_find_character){
     app->refresh_view(app, &view);
     
     if (pos2 >= 0) {
-        vim_exec_action(app, make_range(pos1, pos2));
+        vim_exec_action(app, make_range(pos1, pos2 + 1));
     }
     else {
         //TODO(chronister): This will not be correct for visual mode!
@@ -762,6 +792,8 @@ CUSTOM_COMMAND_SIG(seek_til_character){
 
     pos1 = view.cursor.pos;
     buffer_seek_delimiter_forward(app, &buffer, pos1, trigger.key.character, &pos2);
+    //TODO(chronister): @Copypasta This command is identical to the above except for the - 1
+	pos2 -= 1;
     Buffer_Seek seek;
     seek.type = buffer_seek_pos;
     seek.pos = pos2;
@@ -769,8 +801,7 @@ CUSTOM_COMMAND_SIG(seek_til_character){
     app->refresh_view(app, &view);
     
     if (pos2 >= 0) {
-        //TODO(chronister): This command is identical to the above except for the + 1
-        vim_exec_action(app, make_range(pos1, pos2+1));
+        vim_exec_action(app, make_range(pos1, pos2 + 1));
     }
     else {
         //TODO(chronister): This will not be correct for visual mode!
@@ -819,6 +850,30 @@ CUSTOM_COMMAND_SIG(open_window_hsplit){
 
     end_chord_bar(app);
     exec_command(app, cmdid_open_panel_hsplit);
+}
+
+CUSTOM_COMMAND_SIG(open_window_dup_hsplit){
+    View_Summary view = app->get_active_view(app);
+	
+    set_current_keymap(app, mapid_normal);
+
+    end_chord_bar(app);
+    exec_command(app, cmdid_open_panel_hsplit);
+
+    View_Summary newView = app->get_active_view(app);
+	app->view_set_buffer(app, &newView, view.locked_buffer_id);
+}
+
+CUSTOM_COMMAND_SIG(open_window_dup_vsplit){
+    View_Summary view = app->get_active_view(app);
+	
+    set_current_keymap(app, mapid_normal);
+
+    end_chord_bar(app);
+    exec_command(app, cmdid_open_panel_vsplit);
+
+    View_Summary newView = app->get_active_view(app);
+	app->view_set_buffer(app, &newView, view.locked_buffer_id);
 }
 
 //TODO(chronister): Enumerate through views using get_view_first and get_view_nexct
@@ -882,6 +937,12 @@ CUSTOM_COMMAND_SIG(visual_delete) {
 
 CUSTOM_COMMAND_SIG(visual_yank) {
     state.action = vimaction_yank_range;
+    vim_exec_action(app, state.selection_range);
+    exec_command(app, enter_normal_mode);
+}
+
+CUSTOM_COMMAND_SIG(visual_format) {
+    state.action = vimaction_format_range;
     vim_exec_action(app, state.selection_range);
     exec_command(app, enter_normal_mode);
 }
@@ -974,6 +1035,22 @@ CUSTOM_COMMAND_SIG(search_under_cursor) {
     }
 }
 
+CUSTOM_COMMAND_SIG(vim_delete_char) {
+    View_Summary view = app->get_active_view(app);
+    Buffer_Summary buffer = app->get_buffer(app, view.buffer_id);
+    
+    char nextch[2];
+    int pos = view.cursor.pos;
+    app->buffer_read_range(app, &buffer, pos, pos + 1, nextch);
+    if (nextch[0] != '\n') {
+        if (0 < buffer.size && pos < buffer.size){
+            app->buffer_replace_range(app, &buffer,
+                                      pos, pos+1, 0, 0);
+            //TODO(chronister): Going into register
+        }
+    }
+}
+
 /*                                   *
  * Statusbar processing and commands *
  *                                   */
@@ -1049,6 +1126,19 @@ CUSTOM_COMMAND_SIG(status_command){
     
     if (command_end == command_offset) { return; }
     String command = substr(bar.string, command_offset, command_end - command_offset);
+
+	bool command_is_numeric = true;
+	for (int command_ch = 0; command_ch < command.size; ++command_ch) {
+		if (!('0' <= command.str[command_ch] && command.str[command_ch] <= '9')) {
+			command_is_numeric = false;
+		}
+	}
+
+	if (command_is_numeric) {
+		int line = str_to_int(command);
+		active_view_to_line(app, line);
+		return;
+	}
 
     int arg_start = command_end;
     while (arg_start < bar.string.size && 
@@ -1212,8 +1302,7 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, 'd', MDFR_CTRL, cmdid_page_down);
 
     //TODO (chronister): this doesn't go into register like you want
-    bind(context, 'x', MDFR_NONE, delete_char);
-    //TODO(chronister): Pasting from registers
+    bind(context, 'x', MDFR_NONE, vim_delete_char);
     bind(context, 'P', MDFR_NONE, paste_before);
     bind(context, 'p', MDFR_NONE, paste_after);
 
@@ -1222,6 +1311,7 @@ void vim_get_bindings(Bind_Helper *context) {
 
     //TODO(chronister): Navigation of search using vim shortcuts instead of Up/Down
     bind(context, '/', MDFR_NONE, search);
+    bind(context, '?', MDFR_NONE, search);
 
     bind(context, 'i', MDFR_NONE, insert_at);
     bind(context, 'a', MDFR_NONE, insert_after);
@@ -1240,7 +1330,9 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, '"', MDFR_NONE, enter_chord_switch_registers);
 
     bind(context, 'd', MDFR_NONE, enter_chord_delete);
+    bind(context, 'c', MDFR_NONE, enter_chord_change);
     bind(context, 'y', MDFR_NONE, enter_chord_yank);
+    bind(context, '=', MDFR_NONE, enter_chord_format);
     bind(context, 'g', MDFR_NONE, enter_chord_g);
     bind(context, 'w', MDFR_CTRL, enter_chord_window);
     bind(context, 'D', MDFR_NONE, delete_line);
@@ -1266,6 +1358,8 @@ void vim_get_bindings(Bind_Helper *context) {
     begin_map(context, mapid_visual);
     inherit_map(context, mapid_movements);
     bind(context, 'd', MDFR_NONE, visual_delete);
+    bind(context, 'y', MDFR_NONE, visual_yank);
+    bind(context, '=', MDFR_NONE, visual_format);
     end_map(context);
 
     /* Insert mode
@@ -1345,6 +1439,12 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, 'y', MDFR_NONE, move_line_exec_action);
     end_map(context);
 
+    // format+movement chords
+    begin_map(context, mapid_chord_format);
+    inherit_map(context, mapid_movements);
+    bind(context, '=', MDFR_NONE, move_line_exec_action);
+    end_map(context);
+
     // Map for chords which start with the letter g
     begin_map(context, mapid_chord_g);
     inherit_map(context, mapid_nomap);
@@ -1363,8 +1463,8 @@ void vim_get_bindings(Bind_Helper *context) {
 
     bind(context, 'w', MDFR_NONE|MDFR_CTRL, cycle_window_focus);
     //TODO(chronister): These
-    //bind(context, 'v', MDFR_NONE|MDFR_CTRL, open_window_dup_vsplit);
-    //bind(context, 's', MDFR_NONE|MDFR_CTRL, open_window_dup_hsplit);
+    bind(context, 'v', MDFR_NONE|MDFR_CTRL, open_window_dup_vsplit);
+    bind(context, 's', MDFR_NONE|MDFR_CTRL, open_window_dup_hsplit);
     bind(context, 'n', MDFR_NONE|MDFR_CTRL, open_window_hsplit);
     bind(context, 'q', MDFR_NONE|MDFR_CTRL, close_window);
     bind(context, key_esc, MDFR_NONE, enter_normal_mode);

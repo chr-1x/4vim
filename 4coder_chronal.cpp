@@ -1,4 +1,10 @@
 #include "4coder_vim.cpp"
+
+#define GB_REGEX_IMPLEMENTATION
+#include "gb_regex.h"
+
+const static char* CompilationBufferName = "*Build*";
+
 /* Sample usage of vim functions, from my own 4coder custom. 
  * Feel free to copy and tweak as you like! */
 
@@ -40,9 +46,6 @@ const int color_margin_replace = 0x5a192e;
 const int color_margin_visual = 0x722b04;
 
 HOOK_SIG(chronal_init){
-    exec_command(app, cmdid_open_panel_vsplit);
-    exec_command(app, cmdid_change_active_panel);
-
     app->change_theme(app, literal("Dragonfire"));
     app->change_font(app, literal("hack"));
 
@@ -122,6 +125,28 @@ HOOK_SIG(chronal_new_file){
     return vim_hook_new_file_func(app);
 }
 
+CUSTOM_COMMAND_SIG(build_at_launch_location){
+    // @Copypasta from 4coder_default_bindings
+    // NOTE(allen|a3.3):  EXAMPLE probably not all that useful in practice.
+    // 
+    // An example of calling build by setting all
+    // parameters directly. This only works if build.bat can be called
+    // from the directory the application is launched at.
+	exec_command(app, open_window_dup_hsplit);
+    push_parameter(app, par_flags, CLI_OverlapWithConflict);
+    push_parameter(app, par_name, literal(CompilationBufferName));
+    push_parameter(app, par_cli_path, literal("."));
+    push_parameter(app, par_cli_command, literal("build"));
+    exec_command(app, cmdid_command_line);
+}
+
+CUSTOM_COMMAND_SIG(next_build_error) {
+    Buffer_Summary Buffer = app->get_buffer_by_name(app, (char*)CompilationBufferName, (int)strlen(CompilationBufferName));
+    View_Summary compilation_view = get_first_view_with_buffer(app, Buffer.buffer_id);
+
+		
+}
+
 // NOTE(chronister): Define the four functions that the vim plugin wants in order
 // to determine what to do when modes change.
 // TODO(chronister): 
@@ -176,6 +201,9 @@ void chronal_get_bindings(Bind_Helper *context) {
     bind(context, ';', MDFR_NONE, status_command);
     end_map(context);
 
+    begin_map(context, mapid_normal);
+    bind(context, 'b', MDFR_ALT, build_at_launch_location);
+    end_map(context);
 
     // I can also define custom commands very simply:
 
