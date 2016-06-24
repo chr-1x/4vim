@@ -173,11 +173,15 @@ static void set_current_keymap(struct Application_Links* app, int map) {
     unsigned int access = AccessAll;
     View_Summary view = app->get_active_view(app, access);
     Buffer_Summary buffer = app->get_buffer(app, view.buffer_id, access);
+ 
+#if 0
     if (!buffer.exists) {
         buffer = app->get_parameter_buffer(app, 0, access);
     }
+#endif
+
     if (!buffer.exists) { return; }
-    
+
 #if 0
     push_parameter(app, par_buffer_id, buffer.buffer_id);
     push_parameter(app, par_key_mapid, map);
@@ -319,6 +323,27 @@ CUSTOM_COMMAND_SIG(enter_normal_mode){
     end_chord_bar(app);
 
     set_current_keymap(app, mapid_normal);
+
+    on_enter_normal_mode(app);
+}
+
+// NOTE(allen): Here's how I got this working for now, since I'm passing the
+// buffer_id for hooks directly now.
+static void enter_normal_mode(struct Application_Links *app, int buffer_id){
+    unsigned int access = AccessAll;
+    Buffer_Summary buffer;
+    
+    if (state.mode == mode_visual ||
+        state.mode == mode_visual_line) {
+        end_visual_selection(app);
+    }
+
+    state.action = vimaction_none;
+    state.mode = mode_normal;
+    end_chord_bar(app);
+
+    buffer = app->get_buffer(app, buffer_id, access);
+    app->buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_normal);
 
     on_enter_normal_mode(app);
 }
@@ -472,7 +497,7 @@ CUSTOM_COMMAND_SIG(compound_move_command){
     
     pos1 = view.cursor.pos;
     exec_command(app, command);
-    app->refresh_view(app, &view);
+    refresh_view(app, &view);
     pos2 = view.cursor.pos;
     
     vim_exec_action(app, make_range(pos1, pos2));
@@ -502,7 +527,7 @@ CUSTOM_COMMAND_SIG(move_forward_word_start){
     basic_seek(app, true, BoundryAlphanumeric);
     
     exec_command(app, move_right);
-    app->refresh_view(app, &view);
+    refresh_view(app, &view);
     int pos2 = view.cursor.pos;
 
     vim_exec_action(app, make_range(pos1, pos2));
@@ -522,7 +547,7 @@ CUSTOM_COMMAND_SIG(move_backward_word_start){
 #endif
     basic_seek(app, false, BoundryToken | BoundryWhitespace);
     
-    app->refresh_view(app, &view);
+    refresh_view(app, &view);
     int pos2 = view.cursor.pos;
 
     vim_exec_action(app, make_range(pos1, pos2));
@@ -543,7 +568,7 @@ CUSTOM_COMMAND_SIG(move_forward_word_end){
 #endif
     basic_seek(app, true, BoundryWhitespace);
     
-    app->refresh_view(app, &view);
+    refresh_view(app, &view);
     int pos2 = view.cursor.pos;
     exec_command(app, move_left);
 
@@ -627,11 +652,11 @@ CUSTOM_COMMAND_SIG(move_line_exec_action){
     view = app->get_active_view(app, access);
 
     exec_command(app, seek_beginning_of_line);
-    app->refresh_view(app, &view);
+    refresh_view(app, &view);
     pos1 = view.cursor.pos;
 
     exec_command(app, seek_end_of_line);
-    app->refresh_view(app, &view);
+    refresh_view(app, &view);
     pos2 = view.cursor.pos + 1;
     
     vim_exec_action(app, make_range(pos1, pos2));
@@ -665,7 +690,7 @@ CUSTOM_COMMAND_SIG(seek_find_character){
     seek.type = buffer_seek_pos;
     seek.pos = pos2;
     app->view_set_cursor(app, &view, seek, 1);
-    app->refresh_view(app, &view);
+    refresh_view(app, &view);
     
     if (pos2 >= 0) {
         vim_exec_action(app, make_range(pos1, pos2));
@@ -694,7 +719,7 @@ CUSTOM_COMMAND_SIG(seek_til_character){
     seek.type = buffer_seek_pos;
     seek.pos = pos2;
     app->view_set_cursor(app, &view, seek, 1);
-    app->refresh_view(app, &view);
+    refresh_view(app, &view);
     
     if (pos2 >= 0) {
         //TODO(chronister): This command is identical to the above except for the + 1
@@ -717,7 +742,7 @@ CUSTOM_COMMAND_SIG(vim_move_up){
     pos1 = view.cursor.pos;
 
     exec_command(app, move_up);
-    app->refresh_view(app, &view);
+    refresh_view(app, &view);
     pos2 = view.cursor.pos;
     
     vim_exec_action(app, make_range(pos1, pos2));
@@ -733,7 +758,7 @@ CUSTOM_COMMAND_SIG(vim_move_down){
     pos1 = view.cursor.pos;
 
     exec_command(app, move_down);
-    app->refresh_view(app, &view);
+    refresh_view(app, &view);
     pos2 = view.cursor.pos;
     
     vim_exec_action(app, make_range(pos1, pos2));
@@ -779,7 +804,7 @@ CUSTOM_COMMAND_SIG(paste_before){
     Vim_Register* reg = state.registers + state.paste_register;
     if (reg->is_line) {
         exec_command(app, seek_beginning_of_line);
-        app->refresh_view(app, &view);
+        refresh_view(app, &view);
     }
     pos1 = view.cursor.pos;
     app->buffer_replace_range(app, &buffer, pos1, pos1, reg->text.str, reg->text.size);
@@ -800,7 +825,7 @@ CUSTOM_COMMAND_SIG(paste_after){
     if (reg->is_line) {
         exec_command(app, seek_end_of_line);
         exec_command(app, move_right);
-        app->refresh_view(app, &view);
+        refresh_view(app, &view);
     }
     pos1 = view.cursor.pos;
     app->buffer_replace_range(app, &buffer, pos1, pos1, reg->text.str, reg->text.size);
@@ -1029,21 +1054,23 @@ VIM_COMMAND_FUNC_SIG(horizontal_split) {
 // CALL ME
 // This function should be called from your 4coder custom init hook
 HOOK_SIG(vim_hook_init_func) {
-    exec_command(app, enter_normal_mode);
+//    exec_command(app, enter_normal_mode);
     return 0;
 }
 
 // CALL ME
 // This function should be called from your 4coder custom open file hook
-HOOK_SIG(vim_hook_open_file_func) {
-    exec_command(app, enter_normal_mode);
+OPEN_FILE_HOOK_SIG(vim_hook_open_file_func) {
+//    exec_command(app, enter_normal_mode);
+    enter_normal_mode(app, buffer_id);
     return 0;
 }
 
 // CALL ME
 // This function should be called from your 4coder custom new file hook
-HOOK_SIG(vim_hook_new_file_func) {
-    exec_command(app, enter_normal_mode);
+OPEN_FILE_HOOK_SIG(vim_hook_new_file_func) {
+//    exec_command(app, enter_normal_mode);
+    enter_normal_mode(app, buffer_id);
     return 0;
 }
 

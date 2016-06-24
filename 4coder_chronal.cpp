@@ -90,9 +90,9 @@ HOOK_SIG(chronal_init){
     return(0);
 }
 
-HOOK_SIG(chronal_file_settings){
+OPEN_FILE_HOOK_SIG(chronal_file_settings){
     unsigned int access = AccessAll;
-    Buffer_Summary buffer = app->get_parameter_buffer(app, 0, access);
+    Buffer_Summary buffer = app->get_buffer(app, buffer_id, access);
     assert(buffer.exists);
 
     int treat_as_code = 0;
@@ -118,14 +118,14 @@ HOOK_SIG(chronal_file_settings){
     exec_command(app, enter_normal_mode);
 
     // NOTE(chronister): Be sure to call the vim custom's hook!
-    vim_hook_open_file_func(app);
+    vim_hook_open_file_func(app, buffer_id);
 
     return 0;
 }
 
-HOOK_SIG(chronal_new_file){
+OPEN_FILE_HOOK_SIG(chronal_new_file){
     // NOTE(chronister): Be sure to call the vim custom's hook!
-    return vim_hook_new_file_func(app);
+    return vim_hook_new_file_func(app, buffer_id);
 }
 
 // NOTE(chronister): Define the four functions that the vim plugin wants in order
@@ -166,8 +166,8 @@ void on_enter_visual_mode(struct Application_Links *app) {
 void chronal_get_bindings(Bind_Helper *context) {
     // Set the hooks
     set_hook(context, hook_start, chronal_init);
-    set_hook(context, hook_open_file, chronal_file_settings);
-    set_hook(context, hook_new_file, chronal_new_file);
+    set_open_file_hook(context, chronal_file_settings);
+    set_new_file_hook(context, chronal_new_file);
 
     // Call to set the vim bindings
     vim_get_bindings(context);
