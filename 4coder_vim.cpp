@@ -1272,7 +1272,7 @@ VIM_COMMAND_FUNC_SIG(write_file) {
 #endif
         
         Buffer_Summary buffer = app->get_buffer(app, view.buffer_id, access);
-        app->save_buffer(app, &buffer, expand_str(argstr));
+        app->save_buffer(app, &buffer, expand_str(argstr), 0);
     }
 }
 
