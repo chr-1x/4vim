@@ -148,6 +148,12 @@ static Vim_State state = {};
  * Custom commands *
  *                 */
 
+static int get_current_view_buffer_id(struct Application_Links* app, int access)
+{
+    View_Summary view = app->get_active_view(app, access);
+    return view.buffer_id;
+}
+
 static void set_current_keymap(struct Application_Links* app, int map) {
     unsigned int access = AccessAll;
     View_Summary view = app->get_active_view(app, access);
@@ -431,19 +437,6 @@ CUSTOM_COMMAND_SIG(enter_normal_mode_with_register) {
     on_enter_normal_mode(app);
 }
 
-<<<<<<< HEAD
-CUSTOM_COMMAND_SIG(enter_normal_mode){
-    exec_command(app, enter_normal_mode_with_register);
-    clear_register_selection();
-    end_chord_bar(app);
-}
-
-CUSTOM_COMMAND_SIG(enter_insert_mode){
-    state.mode = mode_insert;
-    set_current_keymap(app, mapid_insert);
-    clear_register_selection();
-    on_enter_insert_mode(app);
-=======
 // NOTE(allen): Here's how I got this working for now, since I'm passing the
 // buffer_id for hooks directly now.
 static void enter_normal_mode(struct Application_Links *app, int buffer_id){
@@ -463,7 +456,29 @@ static void enter_normal_mode(struct Application_Links *app, int buffer_id){
     app->buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_normal);
 
     on_enter_normal_mode(app);
->>>>>>> 35e920b21910df576858821ea2eec1efe12e92bd
+}
+
+CUSTOM_COMMAND_SIG(enter_normal_mode_on_current) {
+    enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
+}
+
+static void enter_insert_mode(struct Application_Links *app, int buffer_id){
+    unsigned int access = AccessAll;
+    Buffer_Summary buffer;
+    
+    if (state.mode == mode_visual ||
+        state.mode == mode_visual_line) {
+        end_visual_selection(app);
+    }
+
+    state.action = vimaction_none;
+    state.mode = mode_insert;
+    end_chord_bar(app);
+
+    buffer = app->get_buffer(app, buffer_id, access);
+    app->buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_insert);
+
+    on_enter_insert_mode(app);
 }
 
 void copy_into_register(struct Application_Links* app, Buffer_Summary* buffer, Range range, Vim_Register* target_register)
@@ -500,19 +515,11 @@ void vim_exec_action(struct Application_Links* app, Range range)
  
             copy_into_register(app, &buffer, range, state.registers + state.yank_register);
             
-#if 0
-            push_parameter(app, par_range_start, range.start);
-            push_parameter(app, par_range_end, range.end);
-            exec_command(app, cmdid_cut);
-<<<<<<< HEAD
+            app->buffer_replace_range(app, &buffer, range.start, range.end, "", 0);
 
             if (state.action == vimaction_change_range) {
-                exec_command(app, enter_insert_mode);
+                enter_insert_mode(app, buffer.buffer_id);
             }
-=======
-#endif
-            clipboard_cut(app, range.start, range.end, 0, access);
->>>>>>> 35e920b21910df576858821ea2eec1efe12e92bd
         } break;
 
         case vimaction_yank_range: {
@@ -523,16 +530,14 @@ void vim_exec_action(struct Application_Links* app, Range range)
         } break;
 
         case vimaction_format_range: {
-            push_parameter(app, par_range_start, range.start);
-            push_parameter(app, par_range_end, range.end - 1);
-            push_parameter(app, par_clear_blank_lines, 0);
-            exec_command(app, cmdid_auto_tab_range);
+            // TODO tab width as a user variable
+            app->buffer_auto_indent(app, &buffer, range.start, range.end - 1, 4, 0);
         } break;
     }
 
     switch (state.mode) {
         case mode_normal: {
-            exec_command(app, enter_normal_mode);
+            enter_normal_mode(app, buffer.buffer_id);
         } break;
 
         case mode_visual: {
@@ -566,8 +571,6 @@ CUSTOM_COMMAND_SIG(enter_visual_mode){
 }
 
 CUSTOM_COMMAND_SIG(enter_visual_line_mode){
-    exec_command(app, enter_visual_mode);
-    state.mode = mode_visual_line;
     clear_register_selection();
     update_visual_line_range(app, state.selection_cursor.end);
 }
@@ -586,15 +589,15 @@ CUSTOM_COMMAND_SIG(enter_chord_switch_registers){
 CUSTOM_COMMAND_SIG(replace_character) {
     //TODO(chronister): Do something a little more intelligent when at the end of a line
     if (get_cursor_char(app) != '\n') {
-        exec_command(app, delete_char);
+        delete_char(app);
     }
-    exec_command(app, write_character);
+    write_character(app);
 }
 
 CUSTOM_COMMAND_SIG(replace_character_then_normal) {
-    exec_command(app, replace_character);
-    exec_command(app, move_left);
-    exec_command(app, enter_normal_mode);
+    replace_character(app);
+    move_left(app);
+    enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
 CUSTOM_COMMAND_SIG(seek_top_of_file) {
@@ -619,7 +622,7 @@ CUSTOM_COMMAND_SIG(compound_move_command){
     view = app->get_active_view(app, access);
     
     pos1 = view.cursor.pos;
-    exec_command(app, command);
+    command(app);
     refresh_view(app, &view);
     pos2 = view.cursor.pos;
     
@@ -638,34 +641,23 @@ CUSTOM_COMMAND_SIG(compound_move_command){
 
 CUSTOM_COMMAND_SIG(move_forward_word_start){
     View_Summary view;
-<<<<<<< HEAD
-    view = app->get_active_view(app);
-    Buffer_Summary buffer = app->get_buffer(app, view.locked_buffer_id);
 
-    int pos = view.cursor.pos;
-
-    int new_pos = buffer_seek_next_word(app, &buffer, pos);
-    app->view_set_cursor(app, &view, seek_pos(new_pos), true);
-    app->refresh_view(app, &view);
-=======
-    
     unsigned int access = AccessProtected;
     view = app->get_active_view(app, access);
 
     int pos1 = view.cursor.pos;
     
 #if 0
-    push_parameter(app, par_flags, BoundryAlphanumeric);
-    exec_command(app, cmdid_seek_right);
+    push_parameter(app, par_flags, BoundaryAlphanumeric);
+    app->exec_command(app, cmdid_seek_right);
 #endif
-    basic_seek(app, true, BoundryAlphanumeric);
+    basic_seek(app, true, BoundaryAlphanumeric);
     
-    exec_command(app, move_right);
+    move_right(app);
     refresh_view(app, &view);
     int pos2 = view.cursor.pos;
->>>>>>> 35e920b21910df576858821ea2eec1efe12e92bd
 
-    vim_exec_action(app, make_range(pos, new_pos));
+    vim_exec_action(app, make_range(pos1, pos2));
 }
 
 CUSTOM_COMMAND_SIG(move_backward_word_start){
@@ -677,10 +669,10 @@ CUSTOM_COMMAND_SIG(move_backward_word_start){
     int pos1 = view.cursor.pos;
     
 #if 0
-    push_parameter(app, par_flags, BoundryToken | BoundryWhitespace);
-    exec_command(app, cmdid_seek_left);
+    push_parameter(app, par_flags, BoundaryToken | BoundaryWhitespace);
+    app->exec_command(app, cmdid_seek_left);
 #endif
-    basic_seek(app, false, BoundryToken | BoundryWhitespace);
+    basic_seek(app, false, BoundaryToken | BoundaryWhitespace);
     
     refresh_view(app, &view);
     int pos2 = view.cursor.pos;
@@ -695,53 +687,53 @@ CUSTOM_COMMAND_SIG(move_forward_word_end){
     view = app->get_active_view(app, access);
 
     int pos1 = view.cursor.pos;
-    exec_command(app, move_right);
+    move_right(app);
     
 #if 0
-    push_parameter(app, par_flags, BoundryWhitespace);
-    exec_command(app, cmdid_seek_right);
+    push_parameter(app, par_flags, BoundaryWhitespace);
+    app->exec_command(app, cmdid_seek_right);
 #endif
-    basic_seek(app, true, BoundryWhitespace);
+    basic_seek(app, true, BoundaryWhitespace);
     
     refresh_view(app, &view);
     int pos2 = view.cursor.pos;
-    exec_command(app, move_left);
+    move_left(app);
 
     vim_exec_action(app, make_range(pos1, pos2));
 }
 
 CUSTOM_COMMAND_SIG(newline_then_insert_before){
-    exec_command(app, seek_beginning_of_line);
+    seek_beginning_of_line(app);
     write_string(app, make_lit_string("\n"));
-    exec_command(app, move_left);
-    exec_command(app, enter_insert_mode);
+    move_left(app);
+    enter_insert_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
 CUSTOM_COMMAND_SIG(insert_at){
-    exec_command(app, enter_insert_mode);
+    enter_insert_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
 CUSTOM_COMMAND_SIG(insert_after){
-    View_Summary view = app->get_active_view(app);
-    Buffer_Summary buffer = app->get_buffer(app, view.buffer_id);
+    View_Summary view = app->get_active_view(app, AccessOpen);
+    Buffer_Summary buffer = app->get_buffer(app, view.buffer_id, AccessOpen);
     char nextch[2];
     int pos = view.cursor.pos;
     app->buffer_read_range(app, &buffer, pos, pos + 1, nextch);
     if (nextch[0] != '\n') {
-        exec_command(app, move_right);
+        move_right(app);
     }
-    exec_command(app, enter_insert_mode);
+    enter_insert_mode(app, view.buffer_id);
 }
 
 CUSTOM_COMMAND_SIG(seek_eol_then_insert){
-    exec_command(app, seek_end_of_line);
-    exec_command(app, enter_insert_mode);
+    seek_end_of_line(app);
+    enter_insert_mode(app, get_current_view_buffer_id(app, AccessOpen));
 }
 
 CUSTOM_COMMAND_SIG(newline_then_insert_after){
-    exec_command(app, seek_end_of_line);
+    seek_end_of_line(app);
     write_string(app, make_lit_string("\n"));
-    exec_command(app, enter_insert_mode);
+    enter_insert_mode(app, get_current_view_buffer_id(app, AccessOpen));
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_delete){
@@ -809,11 +801,11 @@ CUSTOM_COMMAND_SIG(move_line_exec_action){
     unsigned int access = AccessProtected;
     view = app->get_active_view(app, access);
 
-    exec_command(app, seek_beginning_of_line);
+    seek_beginning_of_line(app);
     refresh_view(app, &view);
     pos1 = view.cursor.pos;
 
-    exec_command(app, seek_end_of_line);
+    seek_end_of_line(app);
     refresh_view(app, &view);
     pos2 = view.cursor.pos + 1;
     
@@ -822,12 +814,12 @@ CUSTOM_COMMAND_SIG(move_line_exec_action){
 
 CUSTOM_COMMAND_SIG(delete_line){
     state.action = vimaction_delete_range;
-    exec_command(app, move_line_exec_action);
+    move_line_exec_action(app);
 }
 
 CUSTOM_COMMAND_SIG(yank_line){
     state.action = vimaction_yank_range;
-    exec_command(app, move_line_exec_action);
+    move_line_exec_action(app);
 }
 
 CUSTOM_COMMAND_SIG(seek_find_character){
@@ -855,7 +847,7 @@ CUSTOM_COMMAND_SIG(seek_find_character){
     }
     else {
         //TODO(chronister): This will not be correct for visual mode!
-        exec_command(app, enter_normal_mode);
+        enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
     }
 }
 
@@ -886,7 +878,7 @@ CUSTOM_COMMAND_SIG(seek_til_character){
     }
     else {
         //TODO(chronister): This will not be correct for visual mode!
-        exec_command(app, enter_normal_mode);
+        enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
     }
 }
 
@@ -900,7 +892,7 @@ CUSTOM_COMMAND_SIG(vim_move_up){
 
     pos1 = view.cursor.pos;
 
-    exec_command(app, move_up);
+    move_up(app);
     refresh_view(app, &view);
     pos2 = view.cursor.pos;
     
@@ -916,7 +908,7 @@ CUSTOM_COMMAND_SIG(vim_move_down){
 
     pos1 = view.cursor.pos;
 
-    exec_command(app, move_down);
+    move_down(app);
     refresh_view(app, &view);
     pos2 = view.cursor.pos;
     
@@ -924,41 +916,45 @@ CUSTOM_COMMAND_SIG(vim_move_down){
 }
 
 CUSTOM_COMMAND_SIG(cycle_window_focus){
+    // ASSUMPTION: End of a ^W window shortcut presumably
     set_current_keymap(app, mapid_normal);
 
     end_chord_bar(app);
-    exec_command(app, cmdid_change_active_panel);
+    change_active_panel_regular(app);
 }
 
 CUSTOM_COMMAND_SIG(open_window_hsplit){
+    // ASSUMPTION: End of a ^W window shortcut presumably
     set_current_keymap(app, mapid_normal);
 
     end_chord_bar(app);
-    exec_command(app, cmdid_open_panel_hsplit);
+    open_panel_hsplit(app);
 }
 
 CUSTOM_COMMAND_SIG(open_window_dup_hsplit){
-    View_Summary view = app->get_active_view(app);
+    // ASSUMPTION: End of a ^W window shortcut presumably
+    View_Summary view = app->get_active_view(app, AccessAll);
 	
     set_current_keymap(app, mapid_normal);
 
     end_chord_bar(app);
-    exec_command(app, cmdid_open_panel_hsplit);
+    open_panel_hsplit(app);
 
-    View_Summary newView = app->get_active_view(app);
-	app->view_set_buffer(app, &newView, view.locked_buffer_id);
+    View_Summary newView = app->get_active_view(app, AccessAll);
+	app->view_set_buffer(app, &newView, view.buffer_id, AccessAll);
 }
 
 CUSTOM_COMMAND_SIG(open_window_dup_vsplit){
-    View_Summary view = app->get_active_view(app);
+    // ASSUMPTION: End of a ^W window shortcut presumably
+    View_Summary view = app->get_active_view(app, AccessAll);
 	
     set_current_keymap(app, mapid_normal);
 
     end_chord_bar(app);
-    exec_command(app, cmdid_open_panel_vsplit);
+    open_panel_vsplit(app);
 
-    View_Summary newView = app->get_active_view(app);
-	app->view_set_buffer(app, &newView, view.locked_buffer_id);
+    View_Summary newView = app->get_active_view(app, AccessAll);
+	app->view_set_buffer(app, &newView, view.buffer_id, AccessAll);
 }
 
 //TODO(chronister): Enumerate through views using get_view_first and get_view_nexct
@@ -967,12 +963,12 @@ CUSTOM_COMMAND_SIG(close_window){
     set_current_keymap(app, mapid_normal);
 
     end_chord_bar(app);
-    exec_command(app, cmdid_close_panel);
+    close_panel(app);
 }
 
 CUSTOM_COMMAND_SIG(combine_with_next_line){
-    exec_command(app, seek_end_of_line);
-    exec_command(app, delete_char);
+    seek_end_of_line(app);
+    delete_char(app);
 }
 
 CUSTOM_COMMAND_SIG(paste_before){ 
@@ -986,13 +982,13 @@ CUSTOM_COMMAND_SIG(paste_before){
 
     Vim_Register* reg = state.registers + state.paste_register;
     if (reg->is_line) {
-        exec_command(app, seek_beginning_of_line);
+        seek_beginning_of_line(app);
         refresh_view(app, &view);
     }
     pos1 = view.cursor.pos;
     app->buffer_replace_range(app, &buffer, pos1, pos1, reg->text.str, reg->text.size);
-    exec_command(app, move_left);
-    exec_command(app, seek_beginning_of_line);
+    move_left(app);
+    seek_beginning_of_line(app);
     clear_register_selection();
 }
 
@@ -1007,33 +1003,33 @@ CUSTOM_COMMAND_SIG(paste_after){
 
     Vim_Register* reg = state.registers + state.paste_register;
     if (reg->is_line) {
-        exec_command(app, seek_end_of_line);
-        exec_command(app, move_right);
+        seek_end_of_line(app);
+        move_right(app);
         refresh_view(app, &view);
     }
     pos1 = view.cursor.pos;
     app->buffer_replace_range(app, &buffer, pos1, pos1, reg->text.str, reg->text.size);
-    exec_command(app, move_left);
-    exec_command(app, seek_beginning_of_line);
+    move_left(app);
+    seek_beginning_of_line(app);
     clear_register_selection();
 }
 
 CUSTOM_COMMAND_SIG(visual_delete) {
     state.action = vimaction_delete_range;
     vim_exec_action(app, state.selection_range);
-    exec_command(app, enter_normal_mode);
+    enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
 CUSTOM_COMMAND_SIG(visual_yank) {
     state.action = vimaction_yank_range;
     vim_exec_action(app, state.selection_range);
-    exec_command(app, enter_normal_mode);
+    enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
 CUSTOM_COMMAND_SIG(visual_format) {
     state.action = vimaction_format_range;
     vim_exec_action(app, state.selection_range);
-    exec_command(app, enter_normal_mode);
+    enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
 CUSTOM_COMMAND_SIG(select_register) {
@@ -1042,14 +1038,14 @@ CUSTOM_COMMAND_SIG(select_register) {
 
     Register_Id regid = regid_from_char(trigger.key.character);
     if (regid == reg_unnamed) {
-        exec_command(app, enter_normal_mode);
+        enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
     }
 
     state.yank_register = state.paste_register = regid;
     char str[2] = { (char)trigger.key.character, '\0' };
     push_to_chord_bar(app, str);
 
-    exec_command(app, enter_normal_mode_with_register);
+    enter_normal_mode_with_register(app);
 }
 
 CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
@@ -1070,7 +1066,7 @@ CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
     size = end - start;
 
     end_chord_bar(app);
-    exec_command(app, enter_normal_mode);
+    enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
     
     // NOTE(allen): This check is necessary because app->buffer_read_range
     // requires that the output buffer you provide is at least (end - start) bytes long.
@@ -1086,7 +1082,7 @@ CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
         
 #if 0
         push_parameter(app, par_name, expand_str(file_name));
-        exec_command(app, cmdid_interactive_open);
+        app->exec_command(app, cmdid_interactive_open);
 #endif
         
         view_open_file(app, &view, expand_str(file_name), false);
@@ -1099,8 +1095,8 @@ CUSTOM_COMMAND_SIG(search_under_cursor) {
     View_Summary view;
     Buffer_Summary buffer;
 
-    view = app->get_active_view(app);
-    buffer = app->get_buffer(app, view.locked_buffer_id);
+    view = app->get_active_view(app, AccessAll);
+    buffer = app->get_buffer(app, view.buffer_id, AccessAll);
     if (!buffer.exists) return;
 
     Range word = get_word_under_cursor(app, &buffer, &view);
@@ -1109,20 +1105,18 @@ CUSTOM_COMMAND_SIG(search_under_cursor) {
 
     int new_pos = view.cursor.pos;
 
-    buffer_seek_string_forward(app, &buffer, view.cursor.pos + 1,
+    buffer_seek_string_forward(app, &buffer, view.cursor.pos + 1, 0,
                                wordStr, word.end - word.start, &new_pos);
     if (new_pos < buffer.size && new_pos >= 0) {
         app->view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
-        app->refresh_view(app, &view);
         free(wordStr);
         return;
     }
     else {
-        buffer_seek_string_forward(app, &buffer, 0,
+        buffer_seek_string_forward(app, &buffer, 0, 0,
                                    wordStr, word.end - word.start, &new_pos);
         if (new_pos < buffer.size && new_pos >= 0) {
             app->view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
-            app->refresh_view(app, &view);
         }
         free(wordStr);
         return;
@@ -1130,8 +1124,9 @@ CUSTOM_COMMAND_SIG(search_under_cursor) {
 }
 
 CUSTOM_COMMAND_SIG(vim_delete_char) {
-    View_Summary view = app->get_active_view(app);
-    Buffer_Summary buffer = app->get_buffer(app, view.buffer_id);
+    View_Summary view = app->get_active_view(app, AccessOpen);
+    if (!view.exists) { return; }
+    Buffer_Summary buffer = app->get_buffer(app, view.buffer_id, AccessOpen);
     
     char nextch[2];
     int pos = view.cursor.pos;
@@ -1194,13 +1189,13 @@ CUSTOM_COMMAND_SIG(status_command){
         }
 
         if (match(bar.string, make_lit_string("e "))) {
-            exec_command(app, cmdid_interactive_open);
+            app->exec_command(app, cmdid_interactive_open);
             return;
         }
 
         //TODO(chronister): TEMP! Want to make this use the already-open files instead.
         if (match(bar.string, make_lit_string("b "))) {
-            exec_command(app, cmdid_interactive_open);
+            app->exec_command(app, cmdid_interactive_open);
             return;
         }
     }
@@ -1230,7 +1225,7 @@ CUSTOM_COMMAND_SIG(status_command){
 
 	if (command_is_numeric) {
 		int line = str_to_int(command);
-		active_view_to_line(app, line);
+		active_view_to_line(app, AccessAll, line);
 		return;
 	}
 
@@ -1262,26 +1257,26 @@ VIM_COMMAND_FUNC_SIG(write_file) {
     unsigned int access = AccessProtected;
     view = app->get_active_view(app, access);
     if (argstr.str == NULL || argstr.size == 0) {
-        exec_command(app, cmdid_save);
+        app->exec_command(app, cmdid_save);
     }
     else {
 #if 0
         push_parameter(app, par_buffer_id, view.buffer_id);
         push_parameter(app, par_save_update_name, expand_str(argstr));
-        exec_command(app, cmdid_save);
+        app->exec_command(app, cmdid_save);
 #endif
         
         Buffer_Summary buffer = app->get_buffer(app, view.buffer_id, access);
-        app->save_buffer(app, &buffer, expand_str(argstr));
+        app->save_buffer(app, &buffer, expand_str(argstr), 0);
     }
 }
 
 VIM_COMMAND_FUNC_SIG(edit_file) {
-    exec_command(app, cmdid_interactive_open);
+    app->exec_command(app, cmdid_interactive_open);
 }
 
 VIM_COMMAND_FUNC_SIG(new_file) {
-    exec_command(app, cmdid_interactive_new);
+    app->exec_command(app, cmdid_interactive_new);
 }
 
 VIM_COMMAND_FUNC_SIG(colorscheme) {
@@ -1290,33 +1285,33 @@ VIM_COMMAND_FUNC_SIG(colorscheme) {
     }
     // else set bar text (...) to current colorscheme
     else {
-        exec_command(app, cmdid_open_color_tweaker);
+        app->exec_command(app, cmdid_open_color_tweaker);
     }
 }
 
 VIM_COMMAND_FUNC_SIG(close_buffer) {
-    exec_command(app, cmdid_close_panel);
+    close_panel(app);
 }
 
 VIM_COMMAND_FUNC_SIG(vertical_split) {
-    exec_command(app, cmdid_open_panel_vsplit);
+    open_panel_vsplit(app);
 }
 
 VIM_COMMAND_FUNC_SIG(horizontal_split) {
-    exec_command(app, cmdid_open_panel_hsplit);
+    open_panel_hsplit(app);
 }
 
 // CALL ME
 // This function should be called from your 4coder custom init hook
 HOOK_SIG(vim_hook_init_func) {
-//    exec_command(app, enter_normal_mode);
+//    app->exec_command(app, enter_normal_mode);
     return 0;
 }
 
 // CALL ME
 // This function should be called from your 4coder custom open file hook
 OPEN_FILE_HOOK_SIG(vim_hook_open_file_func) {
-//    exec_command(app, enter_normal_mode);
+//    app->exec_command(app, enter_normal_mode);
     enter_normal_mode(app, buffer_id);
     return 0;
 }
@@ -1324,7 +1319,7 @@ OPEN_FILE_HOOK_SIG(vim_hook_open_file_func) {
 // CALL ME
 // This function should be called from your 4coder custom new file hook
 OPEN_FILE_HOOK_SIG(vim_hook_new_file_func) {
-//    exec_command(app, enter_normal_mode);
+//    app->exec_command(app, enter_normal_mode);
     enter_normal_mode(app, buffer_id);
     return 0;
 }
@@ -1363,7 +1358,7 @@ void vim_get_bindings(Bind_Helper *context) {
     begin_map(context, mapid_movements);
     bind_vanilla_keys(context, cmdid_null);
 
-    bind(context, key_esc, MDFR_NONE, enter_normal_mode);
+    bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
 
     bind(context, 'h', MDFR_NONE, vim_move_left);
     bind(context, 'j', MDFR_NONE, vim_move_down);
@@ -1401,8 +1396,8 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, 'J', MDFR_NONE, combine_with_next_line);
 
     //TODO(chronister): Hitting top/bottom of file if near them
-    bind(context, 'u', MDFR_CTRL, cmdid_page_up);
-    bind(context, 'd', MDFR_CTRL, cmdid_page_down);
+    bind(context, 'u', MDFR_CTRL, page_up);
+    bind(context, 'd', MDFR_CTRL, page_down);
 
     //TODO (chronister): this doesn't go into register like you want
     bind(context, 'x', MDFR_NONE, vim_delete_char);
@@ -1475,9 +1470,9 @@ void vim_get_bindings(Bind_Helper *context) {
     bind_vanilla_keys(context, write_character);
     bind(context, ' ', MDFR_SHIFT, write_character);
     bind(context, key_back, MDFR_NONE, backspace_char);
-    bind(context, 'n', MDFR_CTRL, cmdid_word_complete);
+    bind(context, 'n', MDFR_CTRL, word_complete);
 
-    bind(context, key_esc, MDFR_NONE, enter_normal_mode);
+    bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
 
     end_map(context);
 
@@ -1491,9 +1486,9 @@ void vim_get_bindings(Bind_Helper *context) {
     bind_vanilla_keys(context, replace_character);
     bind(context, ' ', MDFR_SHIFT, write_character);
     bind(context, key_back, MDFR_NONE, backspace_char);
-    bind(context, 'n', MDFR_CTRL, cmdid_word_complete);
+    bind(context, 'n', MDFR_CTRL, word_complete);
 
-    bind(context, key_esc, MDFR_NONE, enter_normal_mode);
+    bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
 
     end_map(context);
 
@@ -1506,28 +1501,28 @@ void vim_get_bindings(Bind_Helper *context) {
     begin_map(context, mapid_chord_replace_single);
     inherit_map(context, mapid_nomap);
     bind_vanilla_keys(context, replace_character_then_normal);
-    bind(context, key_esc, MDFR_NONE, enter_normal_mode);
+    bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
     end_map(context);
     
     // Choosing register for yank/paste chords
     begin_map(context, mapid_chord_choose_register);
     inherit_map(context, mapid_nomap);
     bind_vanilla_keys(context, select_register);
-    bind(context, key_esc, MDFR_NONE, enter_normal_mode);
+    bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
     end_map(context);
 
     // Move-find chords
     begin_map(context, mapid_chord_move_find);
     inherit_map(context, mapid_nomap);
     bind_vanilla_keys(context, seek_find_character);
-    bind(context, key_esc, MDFR_NONE, enter_normal_mode);
+    bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
     end_map(context);
 
     // Til-find chords
     begin_map(context, mapid_chord_move_til);
     bind_vanilla_keys(context, seek_til_character);
     inherit_map(context, mapid_nomap);
-    bind(context, key_esc, MDFR_NONE, enter_normal_mode);
+    bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
     end_map(context);
 
     // Delete+movement chords
@@ -1557,7 +1552,7 @@ void vim_get_bindings(Bind_Helper *context) {
 
     //TODO(chronister): Folds!
 
-    bind(context, key_esc, MDFR_NONE, enter_normal_mode);
+    bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
     end_map(context);
 
     // Window navigation/manipulation chords
@@ -1570,7 +1565,7 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, 's', MDFR_NONE|MDFR_CTRL, open_window_dup_hsplit);
     bind(context, 'n', MDFR_NONE|MDFR_CTRL, open_window_hsplit);
     bind(context, 'q', MDFR_NONE|MDFR_CTRL, close_window);
-    bind(context, key_esc, MDFR_NONE, enter_normal_mode);
+    bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
 
     end_map(context);
 }
