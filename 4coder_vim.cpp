@@ -220,7 +220,7 @@ static void update_visual_range(struct Application_Links* app, int end_new) {
     state.selection_cursor.end = end_new;
     Range normalized = make_range(state.selection_cursor.start, state.selection_cursor.end);
     state.selection_range = make_range(normalized.start, normalized.end + 1);
-    app->view_set_highlight(app, &view, normalized.start, normalized.end + 1, true);
+    app->view_set_highlight(app, &view, state.selection_range.start, state.selection_range.end, true);
 }
 
 static void update_visual_line_range(struct Application_Links* app, int end_new) {
@@ -245,8 +245,6 @@ static void end_visual_selection(struct Application_Links* app) {
     state.selection_range.start = state.selection_range.end = -1;
     state.selection_cursor.start = state.selection_cursor.end = -1;
     app->view_set_highlight(app, &view, 0, 0, false);
-    
-    //app->refresh_view(app, &view);
 }
 
 static int push_to_string(char* str, size_t str_len, size_t str_max,
@@ -437,8 +435,6 @@ CUSTOM_COMMAND_SIG(enter_normal_mode_with_register) {
     on_enter_normal_mode(app);
 }
 
-// NOTE(allen): Here's how I got this working for now, since I'm passing the
-// buffer_id for hooks directly now.
 static void enter_normal_mode(struct Application_Links *app, int buffer_id){
     unsigned int access = AccessAll;
     Buffer_Summary buffer;
@@ -484,13 +480,11 @@ static void enter_insert_mode(struct Application_Links *app, int buffer_id){
 void copy_into_register(struct Application_Links* app, Buffer_Summary* buffer, Range range, Vim_Register* target_register)
 {
     free(target_register->text.str);
-    //TODO(chronister): Something a little more efficient than malloc?
     target_register->text = make_string((char*)malloc(range.end - range.start), range.end - range.start);
     int res = app->buffer_read_range(app, buffer, range.start, range.end, target_register->text.str);
-    res;
 }
 
-void vim_exec_action(struct Application_Links* app, Range range)
+void vim_exec_action(struct Application_Links* app, Range range, bool is_line = false)
 {
     Buffer_Summary buffer;
     View_Summary view;
@@ -498,14 +492,6 @@ void vim_exec_action(struct Application_Links* app, Range range)
     unsigned int access = AccessOpen;
     view = app->get_active_view(app, access);
     buffer = app->get_buffer(app, view.buffer_id, access);
-
-    char line_test[2];
-    bool is_line = true;
-    int res; 
-    res = app->buffer_read_range(app, &buffer, range.start-1, range.start, line_test);
-    is_line = is_line && (line_test[0] == '\n' || range.start == 0);
-    res = app->buffer_read_range(app, &buffer, range.end-1, range.end, line_test);
-    is_line = is_line && (line_test[0] == '\n');
 
     switch (state.action) {
         case vimaction_delete_range: 
@@ -626,7 +612,7 @@ CUSTOM_COMMAND_SIG(compound_move_command){
     refresh_view(app, &view);
     pos2 = view.cursor.pos;
     
-    vim_exec_action(app, make_range(pos1, pos2));
+    vim_exec_action(app, make_range(pos1, pos2), false);
 }
 
 #define vim_move_left compound_move_command<move_left>
@@ -647,17 +633,13 @@ CUSTOM_COMMAND_SIG(move_forward_word_start){
 
     int pos1 = view.cursor.pos;
     
-#if 0
-    push_parameter(app, par_flags, BoundaryAlphanumeric);
-    app->exec_command(app, cmdid_seek_right);
-#endif
     basic_seek(app, true, BoundaryAlphanumeric);
     
     move_right(app);
     refresh_view(app, &view);
     int pos2 = view.cursor.pos;
 
-    vim_exec_action(app, make_range(pos1, pos2));
+    vim_exec_action(app, make_range(pos1, pos2), false);
 }
 
 CUSTOM_COMMAND_SIG(move_backward_word_start){
@@ -668,10 +650,6 @@ CUSTOM_COMMAND_SIG(move_backward_word_start){
 
     int pos1 = view.cursor.pos;
     
-#if 0
-    push_parameter(app, par_flags, BoundaryToken | BoundaryWhitespace);
-    app->exec_command(app, cmdid_seek_left);
-#endif
     basic_seek(app, false, BoundaryToken | BoundaryWhitespace);
     
     refresh_view(app, &view);
@@ -689,10 +667,6 @@ CUSTOM_COMMAND_SIG(move_forward_word_end){
     int pos1 = view.cursor.pos;
     move_right(app);
     
-#if 0
-    push_parameter(app, par_flags, BoundaryWhitespace);
-    app->exec_command(app, cmdid_seek_right);
-#endif
     basic_seek(app, true, BoundaryWhitespace);
     
     refresh_view(app, &view);
@@ -809,7 +783,7 @@ CUSTOM_COMMAND_SIG(move_line_exec_action){
     refresh_view(app, &view);
     pos2 = view.cursor.pos + 1;
     
-    vim_exec_action(app, make_range(pos1, pos2));
+    vim_exec_action(app, make_range(pos1, pos2), true);
 }
 
 CUSTOM_COMMAND_SIG(delete_line){
@@ -1304,14 +1278,12 @@ VIM_COMMAND_FUNC_SIG(horizontal_split) {
 // CALL ME
 // This function should be called from your 4coder custom init hook
 HOOK_SIG(vim_hook_init_func) {
-//    app->exec_command(app, enter_normal_mode);
     return 0;
 }
 
 // CALL ME
 // This function should be called from your 4coder custom open file hook
 OPEN_FILE_HOOK_SIG(vim_hook_open_file_func) {
-//    app->exec_command(app, enter_normal_mode);
     enter_normal_mode(app, buffer_id);
     return 0;
 }
@@ -1319,7 +1291,6 @@ OPEN_FILE_HOOK_SIG(vim_hook_open_file_func) {
 // CALL ME
 // This function should be called from your 4coder custom new file hook
 OPEN_FILE_HOOK_SIG(vim_hook_new_file_func) {
-//    app->exec_command(app, enter_normal_mode);
     enter_normal_mode(app, buffer_id);
     return 0;
 }

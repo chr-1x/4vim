@@ -7,7 +7,6 @@ Use it by adding `#include "4coder_vim.cpp"` at the top of your own 4coder custo
 
 ## Known bugs
   - 4coder-native menus (e.g. filesystem browser) use default 4coder-style bindings
-  - Append ('a') will go to the next line if at the end of a line
   - Can't do most actions on null buffers
   - In 4.0.10, visual mode does not work properly due to coupling of highlight range and cursor. Waiting on Allen for a fix.
 
@@ -21,7 +20,6 @@ There are a ton of missing features. Here's the big ones:
   - Search acting as a movement
   - {, }, (, ) 
   - ^
-  - * (search under cursor)
 - Format chordmode
 - Visual block mode
 - most G-started chords
