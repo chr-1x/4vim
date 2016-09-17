@@ -42,10 +42,10 @@ const int color_margin_visual = 0x722b04;
 
 HOOK_SIG(chronal_init){
     exec_command(app, open_panel_vsplit);
-    exec_command(app, change_active_panel_regular);
+    exec_command(app, change_active_panel);
 
-    app->change_theme(app, literal("Dragonfire"));
-    app->change_font(app, literal("hack"), true);
+    change_theme(app, literal("Dragonfire"));
+    change_font(app, literal("hack"), true);
 
     const int color_bg = 0x15100f;
     const int color_bar = 0x1c1212;
@@ -82,7 +82,7 @@ HOOK_SIG(chronal_init){
         { Stag_At_Highlight, color_text },
     };
 
-    app->set_theme_colors(app, colors, ArrayCount(colors));
+    set_theme_colors(app, colors, ArrayCount(colors));
     
     // NOTE(chronister): Be sure to call the vim custom's hook!
     vim_hook_init_func(app);
@@ -93,7 +93,7 @@ HOOK_SIG(chronal_init){
 
 OPEN_FILE_HOOK_SIG(chronal_file_settings){
     unsigned int access = AccessAll;
-    Buffer_Summary buffer = app->get_buffer(app, buffer_id, access);
+    Buffer_Summary buffer = get_buffer(app, buffer_id, access);
     assert(buffer.exists);
 
     int treat_as_code = 0;
@@ -113,8 +113,8 @@ OPEN_FILE_HOOK_SIG(chronal_file_settings){
     exec_command(app, cmdid_set_settings);
 #endif
     
-    app->buffer_set_setting(app, &buffer, BufferSetting_Lex, treat_as_code);
-    app->buffer_set_setting(app, &buffer, BufferSetting_WrapLine, !treat_as_code);
+    buffer_set_setting(app, &buffer, BufferSetting_Lex, treat_as_code);
+    buffer_set_setting(app, &buffer, BufferSetting_WrapLine, !treat_as_code);
     
     enter_normal_mode(app, buffer_id);
 
@@ -137,7 +137,7 @@ void on_enter_insert_mode(struct Application_Links *app) {
         { Stag_Bar_Active, color_margin_insert },
         { Stag_Margin_Active, color_margin_insert },
     };
-    app->set_theme_colors(app, colors, ArrayCount(colors));
+    set_theme_colors(app, colors, ArrayCount(colors));
 }
 
 void on_enter_replace_mode(struct Application_Links *app) {
@@ -145,7 +145,7 @@ void on_enter_replace_mode(struct Application_Links *app) {
         { Stag_Bar_Active, color_margin_replace },
         { Stag_Margin_Active, color_margin_replace },
     };
-    app->set_theme_colors(app, colors, ArrayCount(colors));
+    set_theme_colors(app, colors, ArrayCount(colors));
 }
 
 void on_enter_normal_mode(struct Application_Links *app) {
@@ -153,7 +153,7 @@ void on_enter_normal_mode(struct Application_Links *app) {
         { Stag_Bar_Active, color_margin_normal },
         { Stag_Margin_Active, color_margin_normal },
     };
-    app->set_theme_colors(app, colors, ArrayCount(colors));
+    set_theme_colors(app, colors, ArrayCount(colors));
 }
 
 void on_enter_visual_mode(struct Application_Links *app) {
@@ -161,7 +161,7 @@ void on_enter_visual_mode(struct Application_Links *app) {
         { Stag_Bar_Active, color_margin_visual },
         { Stag_Margin_Active, color_margin_visual },
     };
-    app->set_theme_colors(app, colors, ArrayCount(colors));
+    set_theme_colors(app, colors, ArrayCount(colors));
 }
 
 void chronal_get_bindings(Bind_Helper *context) {

@@ -8,12 +8,10 @@ Use it by adding `#include "4coder_vim.cpp"` at the top of your own 4coder custo
 ## Known bugs
   - 4coder-native menus (e.g. filesystem browser) use default 4coder-style bindings
   - Can't do most actions on null buffers
-  - In 4.0.10, visual mode does not work properly due to coupling of highlight range and cursor. Waiting on Allen for a fix.
 
 ## Overview of missing features
 There are a ton of missing features. Here's the big ones:
 - Movement-chords appending to chord bar
-- Making chord bar show up all the time to avoid jitter
 - Missing movements
  - rfind and rtil
   - %
