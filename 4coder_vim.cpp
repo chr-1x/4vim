@@ -851,7 +851,6 @@ CUSTOM_COMMAND_SIG(seek_for_character){
     seek.type = buffer_seek_pos;
     seek.pos = pos2;
     view_set_cursor(app, &view, seek, 1);
-
     
     if (pos2 >= 0) {
         vim_exec_action(app, make_range(pos1, pos2));
@@ -1183,6 +1182,8 @@ CUSTOM_COMMAND_SIG(search_under_cursor) {
     buffer = get_buffer(app, view.buffer_id, AccessAll);
     if (!buffer.exists) return;
 
+    int pos1 = view.cursor.pos;
+
     Range word = get_word_under_cursor(app, &buffer, &view);
     char* wordStr = (char*)malloc(word.end - word.start);
     buffer_read_range(app, &buffer, word.start, word.end, wordStr);
@@ -1193,8 +1194,6 @@ CUSTOM_COMMAND_SIG(search_under_cursor) {
                                wordStr, word.end - word.start, &new_pos);
     if (new_pos < buffer.size && new_pos >= 0) {
         view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
-        free(wordStr);
-        return;
     }
     else {
         buffer_seek_string_forward(app, &buffer, 0, 0,
@@ -1202,9 +1201,38 @@ CUSTOM_COMMAND_SIG(search_under_cursor) {
         if (new_pos < buffer.size && new_pos >= 0) {
             view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
         }
-        free(wordStr);
-        return;
     }
+
+    refresh_view(app, &view);
+    int pos2 = view.cursor.pos;
+
+    vim_exec_action(app, make_range(pos1, pos2), false);
+
+    free(wordStr);
+    return;
+}
+
+CUSTOM_COMMAND_SIG(vim_search) {
+    View_Summary view;
+    Buffer_Summary buffer;
+
+    view = get_active_view(app, AccessAll);
+    buffer = get_buffer(app, view.buffer_id, AccessAll);
+    if (!buffer.exists) return;
+
+    // TODO
+}
+
+CUSTOM_COMMAND_SIG(vim_search_reverse) {
+    // TODO
+}
+
+CUSTOM_COMMAND_SIG(vim_search_next) {
+    // TODO
+}
+
+CUSTOM_COMMAND_SIG(vim_search_prev) {
+    // TODO
 }
 
 CUSTOM_COMMAND_SIG(vim_delete_char) {
@@ -1477,6 +1505,13 @@ void vim_get_bindings(Bind_Helper *context) {
 
     bind(context, 'G', MDFR_NONE, vim_move_to_bottom);
 
+    bind(context, '*', MDFR_NONE, search_under_cursor);
+
+    bind(context, '/', MDFR_NONE, vim_search);
+    bind(context, '?', MDFR_NONE, vim_search_reverse);
+    bind(context, 'n', MDFR_NONE, vim_search_next);
+    bind(context, 'N', MDFR_NONE, vim_search_prev);
+
     bind(context, key_mouse_left, MDFR_NONE, vim_move_click);
 
     // Include status command thingy here so that you can do commands in any non-inserty mode
@@ -1505,10 +1540,6 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, 'u', MDFR_NONE, cmdid_undo);
     bind(context, 'r', MDFR_CTRL, cmdid_redo);
 
-    //TODO(chronister): Navigation of search using vim shortcuts instead of Up/Down
-    bind(context, '/', MDFR_NONE, search);
-    bind(context, '?', MDFR_NONE, search);
-
     bind(context, 'i', MDFR_NONE, insert_at);
     bind(context, 'a', MDFR_NONE, insert_after);
     bind(context, 'A', MDFR_NONE, seek_eol_then_insert);
@@ -1533,8 +1564,6 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, 'w', MDFR_CTRL, enter_chord_window);
     bind(context, 'D', MDFR_NONE, vim_delete_line);
     bind(context, 'Y', MDFR_NONE, yank_line);
-
-    bind(context, '*', MDFR_NONE, search_under_cursor);
 
     end_map(context);
 
