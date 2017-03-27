@@ -82,6 +82,10 @@ HOOK_SIG(chronal_init){
         { Stag_Include, color_string_literal },
         { Stag_Highlight, color_highlight_bg },
         { Stag_At_Highlight, color_text },
+        { Stag_Ghost_Character, color_keyword},
+        { Stag_Paste, color_keyword},
+        { Stag_Undo, color_keyword},
+        { Stag_Next_Undo, color_keyword},
     };
 
     set_theme_colors(app, colors, ArrayCount(colors));
