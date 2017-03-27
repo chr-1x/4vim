@@ -24,8 +24,10 @@ int lighten(int color, float amt) {
 	float h = 0.0f;
 	if (cmax == r) {
 		h = 60 * fmod((g - b) / del, 6.0f);
+    }
 	else if (cmax == g) {
 		h = 60 * ((b - r) / del + 2.0f);
+    }
 	else if (cmax == b) {
 		h = 60 * ((r - g) / del + 4.0f);
 	}
@@ -45,7 +47,7 @@ HOOK_SIG(chronal_init){
     exec_command(app, change_active_panel);
 
     change_theme(app, literal("Dragonfire"));
-    change_font(app, literal("hack"), true);
+    change_font(app, literal("Hack"), true);
 
     const int color_bg = 0x15100f;
     const int color_bar = 0x1c1212;
@@ -94,7 +96,7 @@ HOOK_SIG(chronal_init){
 OPEN_FILE_HOOK_SIG(chronal_file_settings){
     unsigned int access = AccessAll;
     Buffer_Summary buffer = get_buffer(app, buffer_id, access);
-    assert(buffer.exists);
+    //assert(buffer.exists);
 
     int treat_as_code = 0;
 

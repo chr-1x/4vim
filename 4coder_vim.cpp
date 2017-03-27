@@ -71,7 +71,7 @@ enum Register_Id {
     reg_1, reg_2, reg_3, reg_4, reg_5, reg_6, reg_7, reg_8, reg_9, reg_0 
 };
 
-Register_Id regid_from_char(char C) {
+Register_Id regid_from_char(Key_Code C) {
     if ('a' <= C && C <= 'z') {
         return (Register_Id)(reg_a + (C - 'a'));
     }
@@ -147,6 +147,18 @@ static Vim_State state = {};
 /*                 *
  * Custom commands *
  *                 */
+
+static bool32 active_view_to_line(struct Application_Links* app, int line)
+{
+    View_Summary view = get_active_view(app, AccessProtected);
+    if (!view.exists) return false;
+
+    if (!view_set_cursor(app, &view, seek_line_char(line, 0), false)) return false;
+
+    GUI_Scroll_Vars scroll = view.scroll_vars;
+    scroll.target_y = line;
+    return view_set_scroll(app, &view, scroll);
+}
 
 static int get_current_view_buffer_id(struct Application_Links* app, int access)
 {
@@ -288,11 +300,11 @@ static void clear_register_selection() {
 
 static int
 buffer_seek_next_word(Application_Links* app, Buffer_Summary* buffer, int pos) {
-	char chunk[1024];
-	int chunk_size = sizeof(chunk);
-	Stream_Chunk stream = {};
+    char chunk[1024];
+    int chunk_size = sizeof(chunk);
+    Stream_Chunk stream = {};
     
-	if (init_stream_chunk(&stream, app, buffer, pos, chunk, chunk_size)) {
+    if (init_stream_chunk(&stream, app, buffer, pos, chunk, chunk_size)) {
         char cursorch = stream.data[pos];
         char nextch = cursorch; 
         int still_looping = true;
@@ -348,11 +360,11 @@ buffer_seek_next_word(Application_Links* app, Buffer_Summary* buffer, int pos) {
 
 static int
 buffer_seek_nonalphanumeric_right(Application_Links* app, Buffer_Summary* buffer, int pos) {
-	char chunk[1024];
-	int chunk_size = sizeof(chunk);
-	Stream_Chunk stream = {};
+    char chunk[1024];
+    int chunk_size = sizeof(chunk);
+    Stream_Chunk stream = {};
     
-	if (init_stream_chunk(&stream, app, buffer, pos, chunk, chunk_size)) {
+    if (init_stream_chunk(&stream, app, buffer, pos, chunk, chunk_size)) {
         char cursorch = stream.data[pos];
         char nextch = cursorch; 
         int still_looping = true;
@@ -383,11 +395,11 @@ buffer_seek_nonalphanumeric_right(Application_Links* app, Buffer_Summary* buffer
 
 static int
 buffer_seek_nonalphanumeric_left(Application_Links* app, Buffer_Summary* buffer, int pos) {
-	char chunk[1024];
-	int chunk_size = sizeof(chunk);
-	Stream_Chunk stream = {};
+    char chunk[1024];
+    int chunk_size = sizeof(chunk);
+    Stream_Chunk stream = {};
     
-	if (init_stream_chunk(&stream, app, buffer, pos, chunk, chunk_size)) {
+    if (init_stream_chunk(&stream, app, buffer, pos, chunk, chunk_size)) {
         char cursorch = stream.data[pos];
         char nextch = cursorch; 
         int still_looping = true;
@@ -485,7 +497,7 @@ void copy_into_register(struct Application_Links* app, Buffer_Summary* buffer, R
 {
     free(target_register->text.str);
     target_register->text = make_string((char*)malloc(range.end - range.start), range.end - range.start);
-    int res = buffer_read_range(app, buffer, range.start, range.end, target_register->text.str);
+    buffer_read_range(app, buffer, range.start, range.end, target_register->text.str);
 }
 
 void vim_exec_action(struct Application_Links* app, Range range, bool is_line = false)
@@ -802,7 +814,7 @@ CUSTOM_COMMAND_SIG(move_line_exec_action){
     vim_exec_action(app, make_range(pos1, pos2), true);
 }
 
-CUSTOM_COMMAND_SIG(delete_line){
+CUSTOM_COMMAND_SIG(vim_delete_line){
     state.action = vimaction_delete_range;
     move_line_exec_action(app);
 }
@@ -827,10 +839,10 @@ CUSTOM_COMMAND_SIG(seek_for_character){
 
     pos1 = view.cursor.pos;
     if (seek_forward) {
-        buffer_seek_delimiter_forward(app, &buffer, pos1, trigger.key.character, &pos2);
+        buffer_seek_delimiter_forward(app, &buffer, pos1, (char)trigger.key.character, &pos2);
     }
     else {
-        buffer_seek_delimiter_backward(app, &buffer, pos1, trigger.key.character, &pos2);
+        buffer_seek_delimiter_backward(app, &buffer, pos1, (char)trigger.key.character, &pos2);
     }
     if (!include_found) { 
         pos2 += (seek_forward ? -1 : 1);
@@ -907,27 +919,27 @@ CUSTOM_COMMAND_SIG(open_window_hsplit){
 CUSTOM_COMMAND_SIG(open_window_dup_hsplit){
     // ASSUMPTION: End of a ^W window shortcut presumably
     View_Summary view = get_active_view(app, AccessAll);
-	
+    
     set_current_keymap(app, mapid_normal);
 
     end_chord_bar(app);
     open_panel_hsplit(app);
 
     View_Summary newView = get_active_view(app, AccessAll);
-	view_set_buffer(app, &newView, view.buffer_id, AccessAll);
+    view_set_buffer(app, &newView, view.buffer_id, AccessAll);
 }
 
 CUSTOM_COMMAND_SIG(open_window_dup_vsplit){
     // ASSUMPTION: End of a ^W window shortcut presumably
     View_Summary view = get_active_view(app, AccessAll);
-	
+    
     set_current_keymap(app, mapid_normal);
 
     end_chord_bar(app);
     open_panel_vsplit(app);
 
     View_Summary newView = get_active_view(app, AccessAll);
-	view_set_buffer(app, &newView, view.buffer_id, AccessAll);
+    view_set_buffer(app, &newView, view.buffer_id, AccessAll);
 }
 
 //TODO(chronister): Enumerate through views using get_view_first and get_view_nexct
@@ -1159,7 +1171,7 @@ CUSTOM_COMMAND_SIG(status_command){
             // TODO(chronister): auto completion!
         }
         else if (in.key.character && key_is_unmodified(&in.key)){
-            append(&bar.string, in.key.character);
+            append(&bar.string, (char)in.key.character);
         }
         else if (in.key.keycode == key_back){
             if (bar.string.size > 0){
@@ -1199,18 +1211,18 @@ CUSTOM_COMMAND_SIG(status_command){
     if (command_end == command_offset) { return; }
     String command = substr(bar.string, command_offset, command_end - command_offset);
 
-	bool command_is_numeric = true;
-	for (int command_ch = 0; command_ch < command.size; ++command_ch) {
-		if (!('0' <= command.str[command_ch] && command.str[command_ch] <= '9')) {
-			command_is_numeric = false;
-		}
-	}
+    bool command_is_numeric = true;
+    for (int command_ch = 0; command_ch < command.size; ++command_ch) {
+        if (!('0' <= command.str[command_ch] && command.str[command_ch] <= '9')) {
+            command_is_numeric = false;
+        }
+    }
 
-	if (command_is_numeric) {
-		int line = str_to_int(command);
-		active_view_to_line(app, AccessAll, line);
-		return;
-	}
+    if (command_is_numeric) {
+        int line = str_to_int(command);
+        active_view_to_line(app, line);
+        return;
+    }
 
     int arg_start = command_end;
     while (arg_start < bar.string.size && 
@@ -1223,6 +1235,7 @@ CUSTOM_COMMAND_SIG(status_command){
         Vim_Command_Defn defn = defined_commands[command_index];
         if (match_part(defn.command, command)) {
             defn.func(app, command, argstr);
+            break;
         }
     }
 }
@@ -1272,18 +1285,12 @@ VIM_COMMAND_FUNC_SIG(close_buffer) {
         close_panel(app);
     }
     else {
-        // send_exit_signal();
+        send_exit_signal(app);
     }
 }
 
 VIM_COMMAND_FUNC_SIG(close_all) {
-    int num_buffers = get_buffer_count(app);
-    if (num_buffers > 1) {
-        close_panel(app);
-    }
-    else {
-        // send_exit_signal();
-    }
+    send_exit_signal(app);
 }
 
 VIM_COMMAND_FUNC_SIG(vertical_split) {
@@ -1292,6 +1299,10 @@ VIM_COMMAND_FUNC_SIG(vertical_split) {
 
 VIM_COMMAND_FUNC_SIG(horizontal_split) {
     open_panel_hsplit(app);
+}
+
+VIM_COMMAND_FUNC_SIG(exec_regex) {
+    fprintf(stderr, "%.*s", (int)argstr.size, argstr.str);
 }
 
 // CALL ME
@@ -1324,6 +1335,7 @@ void vim_get_bindings(Bind_Helper *context) {
      * SECTION: Vim commands *
      *                       */
 
+    define_command(make_lit_string("s"), exec_regex);
     define_command(make_lit_string("write"), write_file);
     define_command(make_lit_string("quit"), close_buffer);
     define_command(make_lit_string("quitall"), close_all);
@@ -1428,20 +1440,16 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, '=', MDFR_NONE, enter_chord_format);
     bind(context, 'g', MDFR_NONE, enter_chord_g);
     bind(context, 'w', MDFR_CTRL, enter_chord_window);
-    bind(context, 'D', MDFR_NONE, delete_line);
+    bind(context, 'D', MDFR_NONE, vim_delete_line);
     bind(context, 'Y', MDFR_NONE, yank_line);
 
     bind(context, '*', MDFR_NONE, search_under_cursor);
 
     end_map(context);
 
-    // TODO(chronister): We have to include this here so that you can do commands
-    // in empty views. Pester Allen to make empty views actually in-memory files.
     begin_map(context, mapid_unbound);
     inherit_map(context, mapid_movements);
-
     bind(context, ':', MDFR_NONE, status_command);
-
     end_map(context);
 
     /* Visual mode
