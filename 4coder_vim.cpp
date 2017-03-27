@@ -838,11 +838,12 @@ CUSTOM_COMMAND_SIG(seek_for_character){
 
     pos1 = view.cursor.pos;
     if (seek_forward) {
-        buffer_seek_delimiter_forward(app, &buffer, pos1, (char)trigger.key.character, &pos2);
+        buffer_seek_delimiter_forward(app, &buffer, pos1+1, (char)trigger.key.character, &pos2);
     }
     else {
-        buffer_seek_delimiter_backward(app, &buffer, pos1, (char)trigger.key.character, &pos2);
+        buffer_seek_delimiter_backward(app, &buffer, pos1-1, (char)trigger.key.character, &pos2);
     }
+    move_left(app);
     if (!include_found) { 
         pos2 += (seek_forward ? -1 : 1);
     }
@@ -948,9 +949,8 @@ CUSTOM_COMMAND_SIG(focus_window_left) {
     end_chord_bar(app);
 
     i32_Rect current = view.view_region;
-    // TEMP simplifying assumption: cursor at top of view
-    int x = current.x0; // TODO cursor pos
-    int y = current.y0;
+    int x = current.x0; //view.cursor.wrapped_x;
+    int y = current.y0; //view.cursor.wrapped_y;
 
     View_Summary best = view;
 
@@ -972,9 +972,8 @@ CUSTOM_COMMAND_SIG(focus_window_right) {
     end_chord_bar(app);
 
     i32_Rect current = view.view_region;
-    // TEMP simplifying assumption: cursor at top of view
-    int x = current.x0; // TODO cursor pos
-    int y = current.y0;
+    int x = current.x0; //view.cursor.wrapped_x;
+    int y = current.y0; //view.cursor.wrapped_y;
 
     View_Summary best = view;
 
@@ -996,9 +995,8 @@ CUSTOM_COMMAND_SIG(focus_window_down) {
     end_chord_bar(app);
 
     i32_Rect current = view.view_region;
-    // TEMP simplifying assumption: cursor at top of view
-    int x = current.x0; // TODO cursor pos
-    int y = current.y0;
+    int x = current.x0; //view.cursor.wrapped_x;
+    int y = current.y0; //view.cursor.wrapped_y;
 
     View_Summary best = view;
 
@@ -1020,9 +1018,8 @@ CUSTOM_COMMAND_SIG(focus_window_up) {
     end_chord_bar(app);
 
     i32_Rect current = view.view_region;
-    // TEMP simplifying assumption: cursor at top of view
-    int x = current.x0; // TODO cursor pos
-    int y = current.y0;
+    int x = current.x0; //view.cursor.wrapped_x;
+    int y = current.y0; //view.cursor.wrapped_y;
 
     View_Summary best = view;
 
@@ -1037,13 +1034,14 @@ CUSTOM_COMMAND_SIG(focus_window_up) {
     set_active_view(app, &best);
 }
 
-//TODO(chronister): Enumerate through views using get_view_first and get_view_nexct
-// to determine if there's only one view left
 CUSTOM_COMMAND_SIG(close_window){
     set_current_keymap(app, mapid_normal);
-
     end_chord_bar(app);
-    close_panel(app);
+
+    View_Summary view = get_view_first(app, AccessAll);
+    get_view_next(app, &view, AccessAll);
+    if (!view.exists) send_exit_signal(app);
+    else close_panel(app);
 }
 
 CUSTOM_COMMAND_SIG(combine_with_next_line){
@@ -1374,14 +1372,11 @@ VIM_COMMAND_FUNC_SIG(colorscheme) {
     }
 }
 
-VIM_COMMAND_FUNC_SIG(close_buffer) {
-    int num_buffers = get_buffer_count(app);
-    if (num_buffers > 1) {
-        close_panel(app);
-    }
-    else {
-        send_exit_signal(app);
-    }
+VIM_COMMAND_FUNC_SIG(close_view) {
+    View_Summary view = get_view_first(app, AccessAll);
+    get_view_next(app, &view, AccessAll);
+    if (!view.exists) send_exit_signal(app);
+    else close_panel(app);
 }
 
 VIM_COMMAND_FUNC_SIG(close_all) {
@@ -1403,6 +1398,7 @@ VIM_COMMAND_FUNC_SIG(exec_regex) {
 // CALL ME
 // This function should be called from your 4coder custom init hook
 HOOK_SIG(vim_hook_init_func) {
+    set_gui_up_down_keys(app, 'k', 'j');
     return 0;
 }
 
@@ -1432,10 +1428,10 @@ void vim_get_bindings(Bind_Helper *context) {
 
     define_command(make_lit_string("s"), exec_regex);
     define_command(make_lit_string("write"), write_file);
-    define_command(make_lit_string("quit"), close_buffer);
+    define_command(make_lit_string("quit"), close_view);
     define_command(make_lit_string("quitall"), close_all);
     define_command(make_lit_string("qa"), close_all);
-    define_command(make_lit_string("close"), close_buffer);
+    define_command(make_lit_string("close"), close_view);
     define_command(make_lit_string("edit"), edit_file);
     define_command(make_lit_string("new"), new_file);
     define_command(make_lit_string("colorscheme"), colorscheme);
@@ -1444,7 +1440,7 @@ void vim_get_bindings(Bind_Helper *context) {
     define_command(make_lit_string("sp"), horizontal_split);
     define_command(make_lit_string("split"), horizontal_split);
 
-    define_command(make_lit_string("exit"), close_buffer);
+    define_command(make_lit_string("exit"), close_view);
 
     /*                          *
      * SECTION: Vim keybindings *
