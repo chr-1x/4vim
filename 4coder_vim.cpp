@@ -657,12 +657,9 @@ CUSTOM_COMMAND_SIG(move_forward_word_start){
 
     int pos1 = view.cursor.pos;
     
-    buffer_seek_next_word(app, &buffer, pos1);
-    
-    move_right(app);
-    refresh_view(app, &view);
-    int pos2 = view.cursor.pos;
+    int pos2 = buffer_seek_next_word(app, &buffer, pos1);
 
+    view_set_cursor(app, &view, seek_pos(pos2), false);
     vim_exec_action(app, make_range(pos1, pos2), false);
 }
 
