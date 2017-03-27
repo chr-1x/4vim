@@ -148,6 +148,8 @@ static Vim_State state = {};
  * Custom commands *
  *                 */
 
+#define for_views(view, app) for (View_Summary view = get_view_first(app, AccessAll); view.exists; get_view_next(app, &view, AccessAll))
+
 static bool32 active_view_to_line(struct Application_Links* app, int line)
 {
     View_Summary view = get_active_view(app, AccessProtected);
@@ -900,26 +902,26 @@ CUSTOM_COMMAND_SIG(vim_move_down){
 CUSTOM_COMMAND_SIG(cycle_window_focus){
     // ASSUMPTION: End of a ^W window shortcut presumably
     set_current_keymap(app, mapid_normal);
-
     end_chord_bar(app);
+
     change_active_panel(app);
 }
 
 CUSTOM_COMMAND_SIG(open_window_hsplit){
     // ASSUMPTION: End of a ^W window shortcut presumably
     set_current_keymap(app, mapid_normal);
-
     end_chord_bar(app);
+
     open_panel_hsplit(app);
 }
 
 CUSTOM_COMMAND_SIG(open_window_dup_hsplit){
-    // ASSUMPTION: End of a ^W window shortcut presumably
     View_Summary view = get_active_view(app, AccessAll);
     
+    // ASSUMPTION: End of a ^W window shortcut presumably
     set_current_keymap(app, mapid_normal);
-
     end_chord_bar(app);
+
     open_panel_hsplit(app);
 
     View_Summary newView = get_active_view(app, AccessAll);
@@ -927,16 +929,112 @@ CUSTOM_COMMAND_SIG(open_window_dup_hsplit){
 }
 
 CUSTOM_COMMAND_SIG(open_window_dup_vsplit){
-    // ASSUMPTION: End of a ^W window shortcut presumably
     View_Summary view = get_active_view(app, AccessAll);
     
+    // ASSUMPTION: End of a ^W window shortcut presumably
     set_current_keymap(app, mapid_normal);
-
     end_chord_bar(app);
+
     open_panel_vsplit(app);
 
     View_Summary newView = get_active_view(app, AccessAll);
     view_set_buffer(app, &newView, view.buffer_id, AccessAll);
+}
+
+CUSTOM_COMMAND_SIG(focus_window_left) {
+    View_Summary view = get_active_view(app, AccessAll);
+
+    set_current_keymap(app, mapid_normal);
+    end_chord_bar(app);
+
+    i32_Rect current = view.view_region;
+    // TEMP simplifying assumption: cursor at top of view
+    int x = current.x0; // TODO cursor pos
+    int y = current.y0;
+
+    View_Summary best = view;
+
+    for_views(nextview, app) {
+        if (nextview.view_id == view.view_id) continue;
+        i32_Rect next = nextview.view_region;
+        if (y < next.y0 || y > next.y1) continue;
+        if (x < next.x0) continue;
+        if (best.view_id == view.view_id || next.x0 > best.view_region.x0) best = nextview;
+    }
+
+    set_active_view(app, &best);
+}
+
+CUSTOM_COMMAND_SIG(focus_window_right) {
+    View_Summary view = get_active_view(app, AccessAll);
+
+    set_current_keymap(app, mapid_normal);
+    end_chord_bar(app);
+
+    i32_Rect current = view.view_region;
+    // TEMP simplifying assumption: cursor at top of view
+    int x = current.x0; // TODO cursor pos
+    int y = current.y0;
+
+    View_Summary best = view;
+
+    for_views(nextview, app) {
+        if (nextview.view_id == view.view_id) continue;
+        i32_Rect next = nextview.view_region;
+        if (y < next.y0 || y > next.y1) continue;
+        if (x > next.x0) continue;
+        if (best.view_id == view.view_id || next.x0 < best.view_region.x0) best = nextview;
+    }
+
+    set_active_view(app, &best);
+}
+
+CUSTOM_COMMAND_SIG(focus_window_down) {
+    View_Summary view = get_active_view(app, AccessAll);
+
+    set_current_keymap(app, mapid_normal);
+    end_chord_bar(app);
+
+    i32_Rect current = view.view_region;
+    // TEMP simplifying assumption: cursor at top of view
+    int x = current.x0; // TODO cursor pos
+    int y = current.y0;
+
+    View_Summary best = view;
+
+    for_views(nextview, app) {
+        if (nextview.view_id == view.view_id) continue;
+        i32_Rect next = nextview.view_region;
+        if (x < next.x0 || x > next.x1) continue;
+        if (y < next.y0) continue;
+        if (best.view_id == view.view_id || next.y0 > best.view_region.y0) best = nextview;
+    }
+
+    set_active_view(app, &best);
+}
+
+CUSTOM_COMMAND_SIG(focus_window_up) {
+    View_Summary view = get_active_view(app, AccessAll);
+
+    set_current_keymap(app, mapid_normal);
+    end_chord_bar(app);
+
+    i32_Rect current = view.view_region;
+    // TEMP simplifying assumption: cursor at top of view
+    int x = current.x0; // TODO cursor pos
+    int y = current.y0;
+
+    View_Summary best = view;
+
+    for_views(nextview, app) {
+        if (nextview.view_id == view.view_id) continue;
+        i32_Rect next = nextview.view_region;
+        if (x < next.x0 || x > next.x1) continue;
+        if (y > next.y0) continue;
+        if (best.view_id == view.view_id || next.y0 < best.view_region.y0) best = nextview;
+    }
+
+    set_active_view(app, &best);
 }
 
 //TODO(chronister): Enumerate through views using get_view_first and get_view_nexct
@@ -1574,12 +1672,24 @@ void vim_get_bindings(Bind_Helper *context) {
     begin_map(context, mapid_chord_window);
     inherit_map(context, mapid_nomap);
 
-    bind(context, 'w', MDFR_NONE|MDFR_CTRL, cycle_window_focus);
-    //TODO(chronister): These
-    bind(context, 'v', MDFR_NONE|MDFR_CTRL, open_window_dup_vsplit);
-    bind(context, 's', MDFR_NONE|MDFR_CTRL, open_window_dup_hsplit);
-    bind(context, 'n', MDFR_NONE|MDFR_CTRL, open_window_hsplit);
-    bind(context, 'q', MDFR_NONE|MDFR_CTRL, close_window);
+    bind(context, 'w', MDFR_NONE, cycle_window_focus);
+    bind(context, 'w', MDFR_CTRL, cycle_window_focus);
+    bind(context, 'v', MDFR_NONE, open_window_dup_vsplit);
+    bind(context, 'v', MDFR_CTRL, open_window_dup_vsplit);
+    bind(context, 's', MDFR_NONE, open_window_dup_hsplit);
+    bind(context, 's', MDFR_CTRL, open_window_dup_hsplit);
+    bind(context, 'n', MDFR_NONE, open_window_hsplit);
+    bind(context, 'n', MDFR_CTRL, open_window_hsplit);
+    bind(context, 'q', MDFR_NONE, close_window);
+    bind(context, 'q', MDFR_CTRL, close_window);
+    bind(context, 'h', MDFR_NONE, focus_window_left);
+    bind(context, 'h', MDFR_CTRL, focus_window_left);
+    bind(context, 'j', MDFR_NONE, focus_window_up);
+    bind(context, 'j', MDFR_CTRL, focus_window_up);
+    bind(context, 'k', MDFR_NONE, focus_window_down);
+    bind(context, 'k', MDFR_CTRL, focus_window_down);
+    bind(context, 'l', MDFR_NONE, focus_window_right);
+    bind(context, 'l', MDFR_CTRL, focus_window_right);
     bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
 
     end_map(context);

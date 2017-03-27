@@ -13,9 +13,7 @@ Use it by adding `#include "4coder_vim.cpp"` at the top of your own 4coder custo
 There are a ton of missing features. Here's the big ones:
 - Movement-chords appending to chord bar
 - Missing movements
- - rfind and rtil
-  - %
-  - Search acting as a movement
+  - % and Search acting as a movement
   - {, }, (, ) 
   - ^
 - Format chordmode
