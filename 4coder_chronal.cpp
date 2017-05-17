@@ -89,7 +89,8 @@ HOOK_SIG(chronal_init){
     };
 
     set_theme_colors(app, colors, ArrayCount(colors));
-    
+
+    default_4coder_initialize(app);
     // NOTE(chronister): Be sure to call the vim custom's hook!
     vim_hook_init_func(app);
 
