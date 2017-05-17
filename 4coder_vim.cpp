@@ -1426,7 +1426,7 @@ VIM_COMMAND_FUNC_SIG(exec_regex) {
 // CALL ME
 // This function should be called from your 4coder custom init hook
 HOOK_SIG(vim_hook_init_func) {
-    set_gui_up_down_keys(app, 'k', 'j');
+    set_gui_up_down_keys(app, 'k', MDFR_CTRL, 'j', MDFR_CTRL);
     return 0;
 }
 
