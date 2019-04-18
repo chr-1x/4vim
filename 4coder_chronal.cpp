@@ -1,107 +1,78 @@
+// Sample usage of vim functions, from my own 4coder custom. 
+// Feel free to copy and tweak as you like!
 
 #include "4coder_vim.cpp"
-/* Sample usage of vim functions, from my own 4coder custom. 
- * Feel free to copy and tweak as you like! */
 
 #define rgb_color(r, g, b) (r << 16 + g << 8 + b << 0)
 #define hex_color(hex) hex
 
-//TODO(chronister): Some more sophiteecated colorscheme things
-#if 0
-int lighten(int color, float amt) {
-	int R = (color >> 16) & 0xFF;
-	int G = (color >> 8) & 0xFF;
-	int B = (color >> 0) & 0xFF;
+// I define my custom colorscheme here. These global color constants define the
+// color of the margins in different modes, to be applied in the callbacks from
+// the vim code below.
+constexpr int color_margin_normal = 0x341313;
+constexpr int color_margin_insert = 0x5a3619;
+constexpr int color_margin_replace = 0x5a192e;
+constexpr int color_margin_visual = 0x722b04;
 
-	float r = R / 255.0f;
-    float g = G / 255.0f;
-	float b = B / 255.0f;
+constexpr int color_bg = 0x15100f;
+constexpr int color_bar = 0x1c1212;
+constexpr int color_bar_hover = 0x261414;
+constexpr int color_bar_active = 0x341313;
+constexpr int color_text = 0x916550;
+constexpr int color_comment = 0x9d5b25;
+constexpr int color_string_literal = 0x9c2d21;
+constexpr int color_num_literals = 0xc56211;
+constexpr int color_keyword = 0xf74402;
+constexpr int color_highlight_bg = 0x2c1d17;
 
-	float cmax = max(r, g, b);
-	float cmin = min(r, g, b);
-	float del = cmax - cmin;
-
-	float h = 0.0f;
-	if (cmax == r) {
-		h = 60 * fmod((g - b) / del, 6.0f);
-    }
-	else if (cmax == g) {
-		h = 60 * ((b - r) / del + 2.0f);
-    }
-	else if (cmax == b) {
-		h = 60 * ((r - g) / del + 4.0f);
-	}
+void chronal_create_dragonfire_theme(Application_Links* app) {
+    Theme theme;
+    theme.colors[Stag_Back] = color_bg;
+    theme.colors[Stag_Margin] = color_bar;
+    theme.colors[Stag_Margin_Hover] = color_bar_hover;
+    theme.colors[Stag_Margin_Active] = color_margin_normal;
+    theme.colors[Stag_Bar] = color_bar;
+    theme.colors[Stag_Bar_Active] = color_bar_active;
+    theme.colors[Stag_Base] = color_text;
+    theme.colors[Stag_Default] = color_text;
+    theme.colors[Stag_Cursor] = color_text;
+    theme.colors[Stag_At_Cursor] = color_bg;
+    theme.colors[Stag_Comment] = color_comment;
+    theme.colors[Stag_Int_Constant] = color_num_literals;
+    theme.colors[Stag_Float_Constant] = color_num_literals;
+    theme.colors[Stag_Str_Constant] = color_string_literal;
+    theme.colors[Stag_Char_Constant] = color_string_literal;
+    theme.colors[Stag_Bool_Constant] = color_keyword;
+    theme.colors[Stag_Keyword] = color_keyword;
+    theme.colors[Stag_Special_Character] = color_keyword;
+    theme.colors[Stag_Preproc] = color_keyword;
+    theme.colors[Stag_Include] = color_string_literal;
+    theme.colors[Stag_Highlight] = color_highlight_bg;
+    theme.colors[Stag_At_Highlight] = color_text;
+    theme.colors[Stag_Ghost_Character] = color_keyword;
+    theme.colors[Stag_Paste] = color_keyword;
+    theme.colors[Stag_Undo] = color_keyword;
+    theme.colors[Stag_Next_Undo] = color_keyword;
+    create_theme(app, &theme, literal("Dragonfire"));
 }
-#endif
 
-/* I define my custom colorscheme here. These global color constants
- * define the color of the margins in different modes, to be applied
- * in the callbacks from the vim code below. */
-const int color_margin_normal = 0x341313;
-const int color_margin_insert = 0x5a3619;
-const int color_margin_replace = 0x5a192e;
-const int color_margin_visual = 0x722b04;
-
-HOOK_SIG(chronal_init){
+START_HOOK_SIG(chronal_init){
     exec_command(app, open_panel_vsplit);
     exec_command(app, change_active_panel);
 
-    change_theme(app, literal("Dragonfire"));
-    change_font(app, literal("Hack"), true);
-
-    const int color_bg = 0x15100f;
-    const int color_bar = 0x1c1212;
-    const int color_bar_hover = 0x261414;
-    const int color_bar_active = 0x341313;
-    const int color_text = 0x916550;
-    const int color_comment = 0x9d5b25;
-    const int color_string_literal = 0x9c2d21;
-    const int color_num_literals = 0xc56211;
-    const int color_keyword = 0xf74402;
-    const int color_highlight_bg = 0x2c1d17;
-    Theme_Color colors[] = {
-        { Stag_Back, color_bg },
-        { Stag_Margin, color_bar },
-        { Stag_Margin_Hover, color_bar_hover },
-        { Stag_Margin_Active, color_margin_normal },
-        { Stag_Bar, color_bar },
-        { Stag_Bar_Active, color_bar_active },
-        { Stag_Base, color_text },
-        { Stag_Default, color_text },
-        { Stag_Cursor, color_text },
-        { Stag_At_Cursor, color_bg },
-        { Stag_Comment, color_comment },
-        { Stag_Int_Constant, color_num_literals },
-        { Stag_Float_Constant, color_num_literals },
-        { Stag_Str_Constant, color_string_literal },
-        { Stag_Char_Constant, color_string_literal },
-        { Stag_Bool_Constant, color_keyword },
-        { Stag_Keyword, color_keyword },
-        { Stag_Special_Character, color_keyword },
-        { Stag_Preproc, color_keyword },
-        { Stag_Include, color_string_literal },
-        { Stag_Highlight, color_highlight_bg },
-        { Stag_At_Highlight, color_text },
-        { Stag_Ghost_Character, color_keyword},
-        { Stag_Paste, color_keyword},
-        { Stag_Undo, color_keyword},
-        { Stag_Next_Undo, color_keyword},
-    };
-
-    set_theme_colors(app, colors, ArrayCount(colors));
+    chronal_create_dragonfire_theme(app);
 
     default_4coder_initialize(app);
     // NOTE(chronister): Be sure to call the vim custom's hook!
     vim_hook_init_func(app);
 
     // no meaning for return
-    return(0);
+    return 0;
 }
 
 OPEN_FILE_HOOK_SIG(chronal_file_settings){
     unsigned int access = AccessAll;
     Buffer_Summary buffer = get_buffer(app, buffer_id, access);
-    //assert(buffer.exists);
 
     int treat_as_code = 0;
 
@@ -173,7 +144,7 @@ void on_enter_visual_mode(struct Application_Links *app) {
 
 void chronal_get_bindings(Bind_Helper *context) {
     // Set the hooks
-    set_hook(context, hook_start, chronal_init);
+    set_start_hook(context, chronal_init);
     set_open_file_hook(context, chronal_file_settings);
     set_new_file_hook(context, chronal_new_file);
 

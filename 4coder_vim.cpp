@@ -673,7 +673,7 @@ CUSTOM_COMMAND_SIG(move_backward_word_start){
 
     int pos1 = view.cursor.pos;
     
-    basic_seek(app, false, BoundaryToken | BoundaryWhitespace);
+    seek_white_or_token_left(app);
     
     refresh_view(app, &view);
     int pos2 = view.cursor.pos;
@@ -690,7 +690,7 @@ CUSTOM_COMMAND_SIG(move_forward_word_end){
     int pos1 = view.cursor.pos;
     move_right(app);
     
-    basic_seek(app, true, BoundaryWhitespace);
+    seek_whitespace_right(app);
     
     refresh_view(app, &view);
     int pos2 = view.cursor.pos;
@@ -1282,7 +1282,7 @@ CUSTOM_COMMAND_SIG(status_command){
     bar.prompt = make_lit_string(":");
 
     while (1){
-        in = get_user_input(app, EventOnAnyKey, EventOnEsc | EventOnButton);
+        in = get_user_input(app, EventOnAnyKey, EventOnEsc | EventOnAnyKey);
         if (in.abort) break;
         if (in.key.keycode == '\n'){
             break;
@@ -1301,17 +1301,17 @@ CUSTOM_COMMAND_SIG(status_command){
         }
 
         if (match(bar.string, make_lit_string("e "))) {
-            exec_command(app, cmdid_interactive_open);
+            exec_command(app, interactive_open);
             return;
         }
 
         if (match(bar.string, make_lit_string("b "))) {
-            exec_command(app, cmdid_interactive_switch_buffer);
+            exec_command(app, interactive_switch_buffer);
             return;
         }
 
         if (match(bar.string, make_lit_string("bw "))) {
-            exec_command(app, cmdid_interactive_kill_buffer);
+            exec_command(app, interactive_kill_buffer);
             return;
         }
     }
@@ -1373,21 +1373,20 @@ VIM_COMMAND_FUNC_SIG(write_file) {
 
     unsigned int access = AccessProtected;
     view = get_active_view(app, access);
+    Buffer_Summary buffer = get_buffer(app, view.buffer_id, access);
     if (argstr.str == NULL || argstr.size == 0) {
-        exec_command(app, cmdid_save);
-    }
-    else {
-        Buffer_Summary buffer = get_buffer(app, view.buffer_id, access);
+        save_buffer(app, &buffer, buffer.file_name, buffer.file_name_len, 0);
+    } else {
         save_buffer(app, &buffer, expand_str(argstr), 0);
     }
 }
 
 VIM_COMMAND_FUNC_SIG(edit_file) {
-    exec_command(app, cmdid_interactive_open);
+    exec_command(app, interactive_open);
 }
 
 VIM_COMMAND_FUNC_SIG(new_file) {
-    exec_command(app, cmdid_interactive_new);
+    exec_command(app, interactive_new);
 }
 
 VIM_COMMAND_FUNC_SIG(colorscheme) {
@@ -1396,7 +1395,7 @@ VIM_COMMAND_FUNC_SIG(colorscheme) {
     }
     // else set bar text (...) to current colorscheme
     else {
-        exec_command(app, cmdid_open_color_tweaker);
+        exec_command(app, open_color_tweaker);
     }
 }
 
