@@ -1,17 +1,17 @@
-/* 4Coder Vim Plugin base.
- * By Andrew "ChronalDragon" Chronister
- *
- * NOTE: 
- *    Requires you to implement a few things in your own _custom!
- *    My personal custom layer 4coder_chronal.cpp is included as 
- *    an example of how to use this. Please take a look at that 
- *    if you are confused.
- */
+// 4Coder Vim Plugin base.
+// By Andrew "ChronalDragon" Chronister
+//
+// NOTE: 
+//    Requires you to implement a few things in your own _custom!
+//    My personal custom layer 4coder_chronal.cpp is included as 
+//    an example of how to use this. Please take a look at that 
+//    if you are confused.
 
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
+#include "defer.h"
 #include "4coder_default_include.cpp"
 
 enum Vim_Maps {
@@ -1275,6 +1275,7 @@ CUSTOM_COMMAND_SIG(status_command){
     set_current_keymap(app, mapid_normal);
 
     if (start_query_bar(app, &bar, 0) == 0) return;
+    defer(end_query_bar(app, &bar, 0));
 
     char bar_string_space[256];
     bar.string = make_fixed_width_string(bar_string_space);
@@ -1282,7 +1283,7 @@ CUSTOM_COMMAND_SIG(status_command){
     bar.prompt = make_lit_string(":");
 
     while (1){
-        in = get_user_input(app, EventOnAnyKey, EventOnEsc | EventOnAnyKey);
+        in = get_user_input(app, EventOnAnyKey, EventOnEsc);
         if (in.abort) break;
         if (in.key.keycode == '\n'){
             break;
