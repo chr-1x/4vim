@@ -1521,6 +1521,7 @@ OPEN_FILE_HOOK_SIG(vim_hook_new_file_func) {
 void vim_get_bindings(Bind_Helper* context) {
 
     set_scroll_rule(context, smooth_scroll_rule);
+    set_render_caller(context, default_render_caller);
 
     // SECTION: Vim commands
 
