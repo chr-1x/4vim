@@ -161,6 +161,14 @@ struct Vim_State {
     int chord_str_len;
 };
 
+#define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app, String command, String argstr)
+typedef VIM_COMMAND_FUNC_SIG(Vim_Command_Func);
+
+struct Vim_Command_Defn {
+    String command;
+    Vim_Command_Func* func;
+};
+
 //=============================================================================
 // > Global Variables <
 // I hope I can use 4coder's API to avoid having these eventually.
@@ -168,14 +176,18 @@ struct Vim_State {
 
 static Vim_State state = {};
 
+//TODO(chronister): Make these be dynamic and be a hashtable
+static Vim_Command_Defn defined_commands[512];
+static int defined_command_count = 0;
+
 //=============================================================================
-// > Helpers <
+// > Helpers <                                                         @helpers
 // Some miscellaneous helper structs and functions.
 //
 // Defer: Run some code when the scope exits, regardless of how it exited.
 //=============================================================================
 
-
+// Defer:                                                                @defer
 // Wah wah C++. Why can't I use a lambda without including this massive header?
 #include <functional>
 
@@ -187,10 +199,14 @@ struct _Defer {
 };
 #define defer(s) _Defer defer##__LINE__([&] { s; })
 
-#define for_views(view, app) for (View_Summary view = get_view_first(app, AccessAll); view.exists; get_view_next(app, &view, AccessAll))
+// Iterate over views:                                               @for_views
+#define for_views(view, app)                                                  \
+    for (View_Summary view = get_view_first(app, AccessAll);                  \
+         view.exists;                                                         \
+         get_view_next(app, &view, AccessAll))
 
 //=============================================================================
-// > Custom commands <
+// > Custom commands <                                                @commands
 // Commands that do things.
 //=============================================================================
 
@@ -474,7 +490,10 @@ buffer_seek_nonalphanumeric_left(Application_Links* app, Buffer_Summary* buffer,
     return pos;
 }
 
-static Range get_word_under_cursor(struct Application_Links* app, Buffer_Summary* buffer, View_Summary* view) {
+static Range
+get_word_under_cursor(struct Application_Links* app,
+                      Buffer_Summary* buffer,
+                      View_Summary* view) {
     int pos, start, end;
     pos = view->cursor.pos;
     start = buffer_seek_nonalphanumeric_right(app, buffer, pos);
@@ -539,8 +558,10 @@ static void enter_insert_mode(struct Application_Links *app, int buffer_id){
     on_enter_insert_mode(app);
 }
 
-void copy_into_register(struct Application_Links* app, Buffer_Summary* buffer, Range range, Vim_Register* target_register)
-{
+void copy_into_register(struct Application_Links* app,
+                        Buffer_Summary* buffer,
+                        Range range,
+                        Vim_Register* target_register) {
     free(target_register->text.str);
     target_register->text = make_string((char*)malloc(range.end - range.start), range.end - range.start);
     buffer_read_range(app, buffer, range.start, range.end, target_register->text.str);
@@ -1297,21 +1318,12 @@ CUSTOM_COMMAND_SIG(vim_delete_char) {
 }
 
 //=============================================================================
-// > Statusbar processing and commands <
-// This is where the vim statusbar feature is handled.
+// > Statusbar processing and commands <                             @statusbar
+// This is where the vim statusbar feature is created.
+//
+// Define a command with VIM_COMMAND_FUNC_SIG and then add it to the statusbar
+// library with define_command().
 //=============================================================================
-
-#define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app, String command, String argstr)
-typedef VIM_COMMAND_FUNC_SIG(Vim_Command_Func);
-
-struct Vim_Command_Defn {
-    String command;
-    Vim_Command_Func* func;
-};
-
-//TODO(chronister): Make these not be globals and be dynamic and be a hashtable
-static Vim_Command_Defn defined_commands[512];
-static int defined_command_count = 0;
 
 CUSTOM_COMMAND_SIG(status_command){
     User_Input in;
