@@ -1317,6 +1317,21 @@ CUSTOM_COMMAND_SIG(vim_delete_char) {
     }
 }
 
+// TODO(chr): Measure the lister size?
+constexpr int HALF_PAGE = 5;
+
+CUSTOM_COMMAND_SIG(lister__page_down) {
+    for (int i = 0; i < HALF_PAGE; ++i) {
+        lister__move_down(app);
+    }
+}
+
+CUSTOM_COMMAND_SIG(lister__page_up) {
+    for (int i = 0; i < HALF_PAGE; ++i) {
+        lister__move_up(app);
+    }
+}
+
 //=============================================================================
 // > Statusbar processing and commands <                             @statusbar
 // This is where the vim statusbar feature is created.
@@ -1766,17 +1781,18 @@ void vim_get_bindings(Bind_Helper* context) {
 
     end_map(context);
 
-    // TODO(chr): Make vim-specific
     begin_map(context, default_lister_ui_map);
     bind_vanilla_keys(context, lister__write_character);
     bind(context, key_esc, MDFR_NONE, lister__quit);
     bind(context, '\n', MDFR_NONE, lister__activate);
     bind(context, '\t', MDFR_NONE, lister__activate);
     bind(context, key_back, MDFR_NONE, lister__backspace_text_field);
-    bind(context, key_up, MDFR_NONE, lister__move_up);
-    bind(context, key_page_up, MDFR_NONE, lister__move_up);
-    bind(context, key_down, MDFR_NONE, lister__move_down);
-    bind(context, key_page_down, MDFR_NONE, lister__move_down);
+    bind(context, 'k', MDFR_CTRL, lister__move_up);
+    bind(context, key_up, MDFR_CTRL, lister__move_up);
+    bind(context, 'j', MDFR_CTRL, lister__move_down);
+    bind(context, key_down, MDFR_CTRL, lister__move_down);
+    bind(context, 'u', MDFR_CTRL, lister__page_up);
+    bind(context, 'd', MDFR_CTRL, lister__page_down);
     bind(context, key_mouse_wheel, MDFR_NONE, lister__wheel_scroll);
     bind(context, key_mouse_left, MDFR_NONE, lister__mouse_press);
     bind(context, key_mouse_left_release, MDFR_NONE, lister__mouse_release);

@@ -134,9 +134,6 @@ void chronal_get_bindings(Bind_Helper *context) {
     //  so that this isn't an issue.
 }
 
-// NOTE(allen): I recommend you just include get_bindings
-// right in your own customization file now, and pass your
-// target cpp file as a parameter to buildsuper.bat
 extern "C" int
 get_bindings(void *data, int size) {
     Bind_Helper context_ = begin_bind_helper(data, size);
