@@ -161,7 +161,6 @@ void chronal_get_bindings(Bind_Helper *context) {
     bind(context, ';', MDFR_NONE, status_command);
     end_map(context);
 
-
     // I can also define custom commands very simply:
 
     // As an example, suppose we want to be able to use 'save' to write the

@@ -1,18 +1,50 @@
-// 4Coder Vim Plugin base.
-// By Andrew "ChronalDragon" Chronister
+//=============================================================================
+// >>> 4Coder vim custom base <<<
+// --- chr <chr@chronal.net>
 //
-// NOTE: 
-//    Requires you to implement a few things in your own _custom!
-//    My personal custom layer 4coder_chronal.cpp is included as 
-//    an example of how to use this. Please take a look at that 
-//    if you are confused.
+#include "4coder_default_include.cpp"
+//
+// 4vim is a prototype vim-binding implementation for 4coder. It is intended to
+// serve as a reusable system that overlays vim functionality on top of 4coder
+// and allows your custom to operate more like vim.
+//
+// To use this, you *must* do the following:
+// 
+// 1. Define and forward 4coder hooks:
+//     - In your start hook, call vim_hook_init_func(app)
+//     - In your open file hook, call vim_hook_open_file_func(app, buffer_id)
+//     - In your new file hook, call vim_hook_new_file_func(app, buffer_id)
+//     - In your get bindings hook, call vim_get_bindings(context)
+//
+// 2. Define the following functions:
+//
+void on_enter_normal_mode(struct Application_Links* app);
+void on_enter_insert_mode(struct Application_Links* app);
+void on_enter_replace_mode(struct Application_Links* app);
+void on_enter_visual_mode(struct Application_Links* app);
+//
+//    The definitions may be empty, but they need to exist or the linker will
+//    complain. TODO(chr). They allow you to hook into vim binding behavior in
+//    your custom, for example to change the color scheme when certain actions
+//    occur.
+//
+// That's it! See the included 4coder_chronal.cpp for examples of adding key
+// bindings, mode change hooks, status bar commands, and other customizations.
+//
+// If you have questions or feature requests, feel free to reach out in the
+// GitHub issues at https://github.com/chr-1x/4vim.
+//
+//=============================================================================
 
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
-#include "defer.h"
-#include "4coder_default_include.cpp"
+//=============================================================================
+// > Types <
+// The vim custom uses these to keep track of its state and overlay some
+// functionality on top of the built in 4coder behavior.
+//=============================================================================
 
 enum Vim_Maps {
     mapid_unbound = mapid_global,
@@ -129,26 +161,38 @@ struct Vim_State {
     int chord_str_len;
 };
 
-/*                             *
- * User-defined function defns *
- *                             */
-
-void on_enter_normal_mode(struct Application_Links *app);
-void on_enter_insert_mode(struct Application_Links *app);
-void on_enter_replace_mode(struct Application_Links *app);
-void on_enter_visual_mode(struct Application_Links *app);
-
-/*                         *
- * (Temp) Global Variables *
- *                         */
+//=============================================================================
+// > Global Variables <
+// I hope I can use 4coder's API to avoid having these eventually.
+//=============================================================================
 
 static Vim_State state = {};
 
-/*                 *
- * Custom commands *
- *                 */
+//=============================================================================
+// > Helpers <
+// Some miscellaneous helper structs and functions.
+//
+// Defer: Run some code when the scope exits, regardless of how it exited.
+//=============================================================================
+
+
+// Wah wah C++. Why can't I use a lambda without including this massive header?
+#include <functional>
+
+using defer_func = std::function<void()>;
+struct _Defer {
+    defer_func the_func;
+    _Defer(defer_func func) : the_func(func) {}
+    ~_Defer() { the_func(); }
+};
+#define defer(s) _Defer defer##__LINE__([&] { s; })
 
 #define for_views(view, app) for (View_Summary view = get_view_first(app, AccessAll); view.exists; get_view_next(app, &view, AccessAll))
+
+//=============================================================================
+// > Custom commands <
+// Commands that do things.
+//=============================================================================
 
 static bool32 active_view_to_line(struct Application_Links* app, int line)
 {
@@ -1252,9 +1296,10 @@ CUSTOM_COMMAND_SIG(vim_delete_char) {
     }
 }
 
-/*                                   *
- * Statusbar processing and commands *
- *                                   */
+//=============================================================================
+// > Statusbar processing and commands <
+// This is where the vim statusbar feature is handled.
+//=============================================================================
 
 #define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app, String command, String argstr)
 typedef VIM_COMMAND_FUNC_SIG(Vim_Command_Func);
@@ -1446,13 +1491,11 @@ OPEN_FILE_HOOK_SIG(vim_hook_new_file_func) {
 
 // CALL ME
 // This function should be called from your 4coder custom get bindings hook
-void vim_get_bindings(Bind_Helper *context) {
+void vim_get_bindings(Bind_Helper* context) {
 
     set_scroll_rule(context, smooth_scroll_rule);
 
-    /*                       *
-     * SECTION: Vim commands *
-     *                       */
+    // SECTION: Vim commands
 
     define_command(make_lit_string("s"), exec_regex);
     define_command(make_lit_string("write"), write_file);
@@ -1470,15 +1513,12 @@ void vim_get_bindings(Bind_Helper *context) {
 
     define_command(make_lit_string("exit"), close_view);
 
-    /*                          *
-     * SECTION: Vim keybindings *
-     *                          */
+    // SECTION: Vim keybindings
 
-    /* Movements.
-     * They move the cursor around.
-     * They're useful in a few different modes, so we have
-     * them defined globally for other modes to inherit from.
-     */
+    // Movements.
+    // They move the cursor around.
+    // They're useful in a few different modes, so we have
+    // them defined globally for other modes to inherit from.
     begin_map(context, mapid_movements);
     bind_vanilla_keys(context, cmdid_null);
 
@@ -1518,11 +1558,10 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, ':', MDFR_NONE, status_command);
     end_map(context);
 
-    /* Normal mode.
-     * aka "It's eating all my input, help!" mode.
-     * Shortcuts for navigation, entering various modes,
-     * dealing with the editor.
-     */
+    // Normal mode.
+    // aka "It's eating all my input, help!" mode.
+    // Shortcuts for navigation, entering various modes,
+    // dealing with the editor.
     begin_map(context, mapid_normal);
     inherit_map(context, mapid_movements);
 
@@ -1572,10 +1611,9 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, ':', MDFR_NONE, status_command);
     end_map(context);
 
-    /* Visual mode
-     * aka "Selecting stuff" mode
-     * A very useful mode!
-     */
+    // Visual mode
+    // aka "Selecting stuff" mode
+    // A very useful mode!
     begin_map(context, mapid_visual);
     inherit_map(context, mapid_movements);
     bind(context, 'd', MDFR_NONE, visual_delete);
@@ -1584,10 +1622,9 @@ void vim_get_bindings(Bind_Helper *context) {
     bind(context, '=', MDFR_NONE, visual_format);
     end_map(context);
 
-    /* Insert mode
-     * You type and it goes into the buffer. Nice and simple.
-     * Escape to exit.
-     */
+    // Insert mode
+    // You type and it goes into the buffer. Nice and simple.
+    // Escape to exit.
     begin_map(context, mapid_insert);
     inherit_map(context, mapid_nomap);
 
@@ -1600,10 +1637,9 @@ void vim_get_bindings(Bind_Helper *context) {
 
     end_map(context);
 
-    /* Replace mode
-     * You type and it goes into the buffer. Nice and simple.
-     * Escape to exit.
-     */
+    // Replace mode
+    // You type and it goes into the buffer. Nice and simple.
+    // Escape to exit.
     begin_map(context, mapid_replace);
     inherit_map(context, mapid_nomap);
 
@@ -1616,10 +1652,9 @@ void vim_get_bindings(Bind_Helper *context) {
 
     end_map(context);
 
-    /* Chord "modes".
-     * They're not really an explicit mode per-say, but the meaning of key presses
-     * does change once a chord starts, and is context-dependent.
-     */
+    // Chord "modes".
+    // They're not really an explicit mode per-say, but the meaning of key presses
+    // does change once a chord starts, and is context-dependent.
     
     // Single-char replace mode
     begin_map(context, mapid_chord_replace_single);
