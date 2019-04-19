@@ -20,7 +20,7 @@ START_HOOK_SIG(chronal_init){
     exec_command(app, change_active_panel);
 
     default_4coder_initialize(app);
-    // NOTE(chronister): Be sure to call the vim custom's hook!
+    // NOTE(chr): Be sure to call the vim custom's hook!
     vim_hook_init_func(app);
 
     change_theme(app, literal("Dragonfire"));
@@ -55,20 +55,20 @@ OPEN_FILE_HOOK_SIG(chronal_file_settings){
     
     enter_normal_mode(app, buffer_id);
 
-    // NOTE(chronister): Be sure to call the vim custom's hook!
+    // NOTE(chr): Be sure to call the vim custom's hook!
     vim_hook_open_file_func(app, buffer_id);
 
     return 0;
 }
 
 OPEN_FILE_HOOK_SIG(chronal_new_file){
-    // NOTE(chronister): Be sure to call the vim custom's hook!
+    // NOTE(chr): Be sure to call the vim custom's hook!
     return vim_hook_new_file_func(app, buffer_id);
 }
 
-// NOTE(chronister): Define the four functions that the vim plugin wants in order
+// NOTE(chr): Define the four functions that the vim plugin wants in order
 // to determine what to do when modes change.
-// TODO(chronister): 
+// TODO(chr): 
 void on_enter_insert_mode(struct Application_Links *app) {
     Theme_Color colors[] = {
         { Stag_Bar_Active, color_margin_insert },
@@ -130,7 +130,7 @@ void chronal_get_bindings(Bind_Helper *context) {
     // would be pointless, as :save would match as a substring of :saveas 
     // first.)
 
-    // TODO(chronister): Make the statusbar commands more intelligent
+    // TODO(chr): Make the statusbar commands more intelligent
     //  so that this isn't an issue.
 }
 
