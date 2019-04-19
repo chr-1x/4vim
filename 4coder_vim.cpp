@@ -1,6 +1,6 @@
 //=============================================================================
 // >>> 4Coder vim custom base <<<
-// --- chr <chr@chronal.net>
+// author: chr <chr@chronal.net>
 //
 #include "4coder_default_include.cpp"
 //
@@ -1764,5 +1764,23 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, 'l', MDFR_CTRL, focus_window_right);
     bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
 
+    end_map(context);
+
+    // TODO(chr): Make vim-specific
+    begin_map(context, default_lister_ui_map);
+    bind_vanilla_keys(context, lister__write_character);
+    bind(context, key_esc, MDFR_NONE, lister__quit);
+    bind(context, '\n', MDFR_NONE, lister__activate);
+    bind(context, '\t', MDFR_NONE, lister__activate);
+    bind(context, key_back, MDFR_NONE, lister__backspace_text_field);
+    bind(context, key_up, MDFR_NONE, lister__move_up);
+    bind(context, key_page_up, MDFR_NONE, lister__move_up);
+    bind(context, key_down, MDFR_NONE, lister__move_down);
+    bind(context, key_page_down, MDFR_NONE, lister__move_down);
+    bind(context, key_mouse_wheel, MDFR_NONE, lister__wheel_scroll);
+    bind(context, key_mouse_left, MDFR_NONE, lister__mouse_press);
+    bind(context, key_mouse_left_release, MDFR_NONE, lister__mouse_release);
+    bind(context, key_mouse_move, MDFR_NONE, lister__repaint);
+    bind(context, key_animate, MDFR_NONE, lister__repaint);
     end_map(context);
 }
