@@ -74,7 +74,7 @@ void on_enter_insert_mode(struct Application_Links *app) {
         { Stag_Bar_Active, color_margin_insert },
         { Stag_Margin_Active, color_margin_insert },
     };
-    //set_theme_colors(app, colors, ArrayCount(colors));
+    set_theme_colors(app, colors, ArrayCount(colors));
 }
 
 void on_enter_replace_mode(struct Application_Links *app) {
@@ -82,7 +82,7 @@ void on_enter_replace_mode(struct Application_Links *app) {
         { Stag_Bar_Active, color_margin_replace },
         { Stag_Margin_Active, color_margin_replace },
     };
-    //set_theme_colors(app, colors, ArrayCount(colors));
+    set_theme_colors(app, colors, ArrayCount(colors));
 }
 
 void on_enter_normal_mode(struct Application_Links *app) {
@@ -90,7 +90,7 @@ void on_enter_normal_mode(struct Application_Links *app) {
         { Stag_Bar_Active, color_margin_normal },
         { Stag_Margin_Active, color_margin_normal },
     };
-    //set_theme_colors(app, colors, ArrayCount(colors));
+    set_theme_colors(app, colors, ArrayCount(colors));
 }
 
 void on_enter_visual_mode(struct Application_Links *app) {
@@ -98,7 +98,7 @@ void on_enter_visual_mode(struct Application_Links *app) {
         { Stag_Bar_Active, color_margin_visual },
         { Stag_Margin_Active, color_margin_visual },
     };
-    //set_theme_colors(app, colors, ArrayCount(colors));
+    set_theme_colors(app, colors, ArrayCount(colors));
 }
 
 void chronal_get_bindings(Bind_Helper *context) {
