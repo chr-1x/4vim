@@ -3,7 +3,7 @@
 name = "Dragonfire";
 
 Back = 0xFF15100f;
-Margin = 0xFF0x341313;
+Margin = 0xFF341313;
 Margin_Hover = 0xFF333333;
 Margin_Active = 0xFF404040;
 List_Item = Margin;
