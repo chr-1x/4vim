@@ -1517,11 +1517,16 @@ OPEN_FILE_HOOK_SIG(vim_hook_new_file_func) {
 }
 
 // CALL ME
+// This function should be called from your 4coder render caller to draw the
+// vim-related things on screen. Call it BEFORE do_core_render().
+RENDER_CALLER_SIG(vim_render_caller) {
+}
+
+// CALL ME
 // This function should be called from your 4coder custom get bindings hook
 void vim_get_bindings(Bind_Helper* context) {
 
     set_scroll_rule(context, smooth_scroll_rule);
-    set_render_caller(context, default_render_caller);
 
     // SECTION: Vim commands
 

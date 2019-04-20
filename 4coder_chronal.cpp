@@ -23,7 +23,8 @@ START_HOOK_SIG(chronal_init){
     // NOTE(chr): Be sure to call the vim custom's hook!
     vim_hook_init_func(app);
 
-    change_theme(app, literal("Dragonfire"));
+    //change_theme(app, literal("Dragonfire"));
+    //change_theme(app, literal("Monokai"));
 
     // no meaning for return
     return 0;
@@ -66,6 +67,11 @@ OPEN_FILE_HOOK_SIG(chronal_new_file){
     return vim_hook_new_file_func(app, buffer_id);
 }
 
+RENDER_CALLER_SIG(default_render_caller){
+    vim_render_caller();
+    default_render_caller();
+}
+
 // NOTE(chr): Define the four functions that the vim plugin wants in order
 // to determine what to do when modes change.
 // TODO(chr): 
@@ -106,6 +112,7 @@ void chronal_get_bindings(Bind_Helper *context) {
     set_start_hook(context, chronal_init);
     set_open_file_hook(context, chronal_file_settings);
     set_new_file_hook(context, chronal_new_file);
+    set_render_caller(context, chronal_render_caller);
 
     // Call to set the vim bindings
     vim_get_bindings(context);
