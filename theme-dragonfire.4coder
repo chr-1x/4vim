@@ -9,7 +9,7 @@ Margin_Active = 0xFF404040;
 List_Item = Margin;
 List_Item_Hover = Margin_Hover;
 List_Item_Active = Margin_Active;
-Highlight_Cursor_Line = 0xFF121E12;
+Highlight_Cursor_Line = 0xFF21140e;
 Highlight = 0xFF2c1d17;
 Mark = 0xFF808080;
 Default = 0xFF916550;
@@ -36,10 +36,10 @@ Highlight_Junk = 0xFF3A0000;
 Highlight_White = 0xFF003A3A;
 
 // constexpr int color_bar_hover = 0x261414;
-// Bar = 0xFF1c1212;
-// Bar_Active = FF341313;
+Bar = 0xFF1c1212;
+Bar_Active = FF341313;
 // TODO(chr): Bar text?
-Base = 0xFF000000;
+Base = 0xFF694f49;
 Pop1 = 0xFF03CF0C;
 Pop2 = 0xFFFF0000;
 

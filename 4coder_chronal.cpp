@@ -23,42 +23,14 @@ START_HOOK_SIG(chronal_init){
     // NOTE(chr): Be sure to call the vim custom's hook!
     vim_hook_init_func(app);
 
-    //change_theme(app, literal("Dragonfire"));
-    //change_theme(app, literal("Monokai"));
-
     // no meaning for return
     return 0;
 }
 
 OPEN_FILE_HOOK_SIG(chronal_file_settings){
-    unsigned int access = AccessAll;
-    Buffer_Summary buffer = get_buffer(app, buffer_id, access);
-
-    int treat_as_code = 0;
-
-    if (buffer.file_name && buffer.size < (16 << 20)){
-        String ext = file_extension(make_string(buffer.file_name, buffer.file_name_len));
-        if (match(ext, make_lit_string("cpp"))) treat_as_code = 1;
-        else if (match(ext, make_lit_string("h"))) treat_as_code = 1;
-        else if (match(ext, make_lit_string("c"))) treat_as_code = 1;
-        else if (match(ext, make_lit_string("hpp"))) treat_as_code = 1;
-    }
-    
-#if 0
-    push_parameter(app, par_buffer_id, buffer.buffer_id);
-    push_parameter(app, par_lex_as_cpp_file, treat_as_code);
-    push_parameter(app, par_wrap_lines, !treat_as_code);
-    exec_command(app, cmdid_set_settings);
-#endif
-    
-    buffer_set_setting(app, &buffer, BufferSetting_Lex, treat_as_code);
-    buffer_set_setting(app, &buffer, BufferSetting_WrapLine, !treat_as_code);
-    
-    enter_normal_mode(app, buffer_id);
-
+    //default_file_settings(app, buffer_id);
     // NOTE(chr): Be sure to call the vim custom's hook!
     vim_hook_open_file_func(app, buffer_id);
-
     return 0;
 }
 
@@ -67,9 +39,11 @@ OPEN_FILE_HOOK_SIG(chronal_new_file){
     return vim_hook_new_file_func(app, buffer_id);
 }
 
-RENDER_CALLER_SIG(default_render_caller){
-    vim_render_caller();
-    default_render_caller();
+RENDER_CALLER_SIG(chronal_render_caller){
+    // NOTE(chr): For the render caller, you MUST call the vim render caller
+    // before the default (or anything that calls do_core_render).
+    vim_render_caller(app, view_id, on_screen_range, do_core_render);
+    default_render_caller(app, view_id, on_screen_range, do_core_render);
 }
 
 // NOTE(chr): Define the four functions that the vim plugin wants in order
