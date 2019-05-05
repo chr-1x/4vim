@@ -162,7 +162,10 @@ struct Vim_State {
     int chord_str_len;
 };
 
-#define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app, const String command, const String argstr)
+#define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app, \
+                                       const String command, \
+                                       const String argstr, \
+                                       bool force)
 typedef VIM_COMMAND_FUNC_SIG(Vim_Command_Func);
 
 struct Vim_Command_Defn {
@@ -1452,6 +1455,11 @@ CUSTOM_COMMAND_SIG(status_command){
     
     if (command_end == command_offset) { return; }
     String command = substr(bar.string, command_offset, command_end - command_offset);
+    bool command_force = false;
+    if (command.str[command.size - 1] == '!') {
+        command.size -= 1;
+        command_force = true;
+    }
 
     bool command_is_numeric = true;
     for (int command_ch = 0; command_ch < command.size; ++command_ch) {
@@ -1476,7 +1484,7 @@ CUSTOM_COMMAND_SIG(status_command){
     for (int command_index = 0; command_index < defined_command_count; ++command_index) {
         Vim_Command_Defn defn = defined_commands[command_index];
         if (match_part(defn.command, command)) {
-            defn.func(app, command, argstr);
+            defn.func(app, command, argstr, command_force);
             break;
         }
     }
@@ -1578,9 +1586,7 @@ VIM_COMMAND_FUNC_SIG(change_directory) {
 
 // CALL ME
 // This function should be called from your 4coder custom init hook
-HOOK_SIG(vim_hook_init_func) {
-    // TODO(chr): Still used for anything?
-    set_gui_up_down_keys(app, 'k', MDFR_CTRL, 'j', MDFR_CTRL);
+START_HOOK_SIG(vim_hook_init_func) {
     return 0;
 }
 
@@ -1588,6 +1594,7 @@ HOOK_SIG(vim_hook_init_func) {
 // This function should be called from your 4coder custom open file hook
 OPEN_FILE_HOOK_SIG(vim_hook_open_file_func) {
     enter_normal_mode(app, buffer_id);
+    default_file_settings(app, buffer_id);
     return 0;
 }
 

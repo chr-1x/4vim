@@ -18,14 +18,13 @@ constexpr int_color color_margin_visual = 0xFF722b04;
 START_HOOK_SIG(chronal_init){
     default_4coder_initialize(app);
     // NOTE(chr): Be sure to call the vim custom's hook!
-    vim_hook_init_func(app);
+    vim_hook_init_func(app, files, file_count, flags, flag_count);
 
     // no meaning for return
     return 0;
 }
 
 OPEN_FILE_HOOK_SIG(chronal_file_settings){
-    //default_file_settings(app, buffer_id);
     // NOTE(chr): Be sure to call the vim custom's hook!
     vim_hook_open_file_func(app, buffer_id);
     return 0;
