@@ -1503,6 +1503,7 @@ VIM_COMMAND_FUNC_SIG(write_file) {
     }
 }
 
+
 VIM_COMMAND_FUNC_SIG(edit_file) {
     exec_command(app, interactive_open);
 }
@@ -1550,6 +1551,17 @@ VIM_COMMAND_FUNC_SIG(close_view) {
 VIM_COMMAND_FUNC_SIG(close_all) {
     send_exit_signal(app);
 }
+
+VIM_COMMAND_FUNC_SIG(write_file_and_close_all) {
+    write_file(app, command, argstr, force);
+    close_all(app, command, argstr, force);
+}
+
+VIM_COMMAND_FUNC_SIG(write_file_and_close_view) {
+    write_file(app, command, argstr, force);
+    close_view(app, command, argstr, force);
+}
+
 
 VIM_COMMAND_FUNC_SIG(vertical_split) {
     open_panel_vsplit(app);
@@ -1809,6 +1821,8 @@ void vim_get_bindings(Bind_Helper* context) {
     define_command(lit("quit"), close_view);
     define_command(lit("quitall"), close_all);
     define_command(lit("qa"), close_all);
+    define_command(lit("wq"), write_file_and_close_view);
+    define_command(lit("wqa"), write_file_and_close_all);
     define_command(lit("close"), close_view);
     define_command(lit("edit"), edit_file);
     define_command(lit("new"), new_file);
