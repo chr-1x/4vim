@@ -239,11 +239,11 @@ static bool directory_cd_expand_user(
         get_user_home_dir(dir_str, dir_capacity);
         String dir = make_string_cap(dir_str, home_dir_len, dir_capacity);
         append_ss(&dir, make_string(rel_path + 1, rel_len - 1));
+        *dir_len = dir.size;
         return true;
     } else {
         return directory_cd(app, dir_str, dir_len, dir_capacity, rel_path, rel_len);
     }
-    
 }
                                      
 
