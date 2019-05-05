@@ -16,9 +16,6 @@ constexpr int_color color_margin_replace = 0xFF5a192e;
 constexpr int_color color_margin_visual = 0xFF722b04;
 
 START_HOOK_SIG(chronal_init){
-    exec_command(app, open_panel_vsplit);
-    exec_command(app, change_active_panel);
-
     default_4coder_initialize(app);
     // NOTE(chr): Be sure to call the vim custom's hook!
     vim_hook_init_func(app);
