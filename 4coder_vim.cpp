@@ -161,7 +161,7 @@ struct Vim_State {
     int chord_str_len;
 };
 
-#define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app, String command, String argstr)
+#define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app, const String command, const String argstr)
 typedef VIM_COMMAND_FUNC_SIG(Vim_Command_Func);
 
 struct Vim_Command_Defn {
@@ -335,7 +335,7 @@ static int push_to_string(char* str, size_t str_len, size_t str_max,
     return i + (int)str_len;
 }
 
-static void push_to_chord_bar(struct Application_Links* app, char* str) {
+static void push_to_chord_bar(struct Application_Links* app, const String str) {
     if (!state.chord_bar_exists) {
         if (start_query_bar(app, &state.chord_bar, 0) == 0) return;
         state.chord_str_len = 0;
@@ -343,7 +343,7 @@ static void push_to_chord_bar(struct Application_Links* app, char* str) {
         state.chord_bar_exists = true;
     }
     state.chord_str_len = push_to_string(state.chord_str, state.chord_str_len, ArrayCount(state.chord_str),
-                                         str, strlen(str));
+                                         str.str, str.size);
     state.chord_bar.string = make_string(state.chord_str, state.chord_str_len, ArrayCount(state.chord_str));
 }
 
@@ -658,7 +658,7 @@ CUSTOM_COMMAND_SIG(enter_chord_replace_single){
 CUSTOM_COMMAND_SIG(enter_chord_switch_registers){
     set_current_keymap(app, mapid_chord_choose_register);
 
-    push_to_chord_bar(app, "\"");
+    push_to_chord_bar(app, lit("\""));
 }
 
 CUSTOM_COMMAND_SIG(replace_character) {
@@ -803,7 +803,7 @@ CUSTOM_COMMAND_SIG(enter_chord_delete){
 
     state.action = vimaction_delete_range;
 
-    push_to_chord_bar(app, "d");
+    push_to_chord_bar(app, lit("d"));
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_change){
@@ -811,7 +811,7 @@ CUSTOM_COMMAND_SIG(enter_chord_change){
 
     state.action = vimaction_change_range;
 
-    push_to_chord_bar(app, "c");
+    push_to_chord_bar(app, lit("c"));
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_yank){
@@ -819,7 +819,7 @@ CUSTOM_COMMAND_SIG(enter_chord_yank){
 
     state.action = vimaction_yank_range;
 
-    push_to_chord_bar(app, "y");
+    push_to_chord_bar(app, lit("y"));
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_format){
@@ -827,37 +827,37 @@ CUSTOM_COMMAND_SIG(enter_chord_format){
 
     state.action = vimaction_format_range;
 
-    push_to_chord_bar(app, "=");
+    push_to_chord_bar(app, lit("="));
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_window){
     set_current_keymap(app, mapid_chord_window);
-    push_to_chord_bar(app, "^W");
+    push_to_chord_bar(app, lit("^W"));
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_move_find){
     set_current_keymap(app, mapid_chord_move_find);
-    push_to_chord_bar(app, "f");
+    push_to_chord_bar(app, lit("f"));
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_move_til){
     set_current_keymap(app, mapid_chord_move_til);
-    push_to_chord_bar(app, "t");
+    push_to_chord_bar(app, lit("t"));
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_move_rfind){
     set_current_keymap(app, mapid_chord_move_rfind);
-    push_to_chord_bar(app, "F");
+    push_to_chord_bar(app, lit("F"));
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_move_rtil){
     set_current_keymap(app, mapid_chord_move_rtil);
-    push_to_chord_bar(app, "T");
+    push_to_chord_bar(app, lit("T"));
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_g){
     set_current_keymap(app, mapid_chord_g);
-    push_to_chord_bar(app, "g");
+    push_to_chord_bar(app, lit("g"));
 }
 
 CUSTOM_COMMAND_SIG(move_line_exec_action){
@@ -1195,7 +1195,7 @@ CUSTOM_COMMAND_SIG(select_register) {
 
     state.yank_register = state.paste_register = regid;
     char str[2] = { (char)trigger.key.character, '\0' };
-    push_to_chord_bar(app, str);
+    push_to_chord_bar(app, lit(str));
 
     enter_normal_mode_with_register(app);
 }
@@ -1520,6 +1520,18 @@ VIM_COMMAND_FUNC_SIG(exec_regex) {
     fprintf(stderr, "%.*s", (int)argstr.size, argstr.str);
 }
 
+VIM_COMMAND_FUNC_SIG(change_directory) {
+    char dir[4096];
+    String dirstr = make_fixed_width_string(dir);
+    if (!directory_cd(app, dirstr.str, &dirstr.size, dirstr.memory_size,
+                      argstr.str, argstr.size)) {
+        fprintf(stderr, "Couldn't change directory to %.*s\n", argstr.size, argstr.str);
+        return;
+    }
+    fprintf(stderr, "%.*s\n", (int)dirstr.size, dirstr.str);
+    push_to_chord_bar(app, dirstr);
+}
+
 // CALL ME
 // This function should be called from your 4coder custom init hook
 HOOK_SIG(vim_hook_init_func) {
@@ -1556,22 +1568,23 @@ void vim_get_bindings(Bind_Helper* context) {
 
     // SECTION: Vim commands
 
-    define_command(make_lit_string("s"), exec_regex);
-    define_command(make_lit_string("write"), write_file);
-    define_command(make_lit_string("quit"), close_view);
-    define_command(make_lit_string("quitall"), close_all);
-    define_command(make_lit_string("qa"), close_all);
-    define_command(make_lit_string("close"), close_view);
-    define_command(make_lit_string("edit"), edit_file);
-    define_command(make_lit_string("new"), new_file);
-    define_command(make_lit_string("vnew"), new_file_open_vertical);
-    define_command(make_lit_string("colorscheme"), colorscheme);
-    define_command(make_lit_string("vs"), vertical_split);
-    define_command(make_lit_string("vsplit"), vertical_split);
-    define_command(make_lit_string("sp"), horizontal_split);
-    define_command(make_lit_string("split"), horizontal_split);
+    define_command(lit("s"), exec_regex);
+    define_command(lit("write"), write_file);
+    define_command(lit("quit"), close_view);
+    define_command(lit("quitall"), close_all);
+    define_command(lit("qa"), close_all);
+    define_command(lit("close"), close_view);
+    define_command(lit("edit"), edit_file);
+    define_command(lit("new"), new_file);
+    define_command(lit("vnew"), new_file_open_vertical);
+    define_command(lit("colorscheme"), colorscheme);
+    define_command(lit("vs"), vertical_split);
+    define_command(lit("vsplit"), vertical_split);
+    define_command(lit("sp"), horizontal_split);
+    define_command(lit("split"), horizontal_split);
+    define_command(lit("cd"), change_directory);
 
-    define_command(make_lit_string("exit"), close_view);
+    define_command(lit("exit"), close_view);
 
     // SECTION: Vim keybindings
 
