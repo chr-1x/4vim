@@ -977,7 +977,8 @@ CUSTOM_COMMAND_SIG(open_window_hsplit){
     set_current_keymap(app, mapid_normal);
     end_chord_bar(app);
 
-    open_panel_hsplit(app);
+    View_Summary view = get_active_view(app, AccessAll);
+    View_Summary new_view = open_view(app, &view, ViewSplit_Top);
 }
 
 CUSTOM_COMMAND_SIG(open_window_dup_hsplit){
@@ -988,9 +989,15 @@ CUSTOM_COMMAND_SIG(open_window_dup_hsplit){
     end_chord_bar(app);
 
     open_panel_hsplit(app);
+}
 
-    View_Summary newView = get_active_view(app, AccessAll);
-    view_set_buffer(app, &newView, view.buffer_id, AccessAll);
+CUSTOM_COMMAND_SIG(open_window_vsplit){
+    // ASSUMPTION: End of a ^W window shortcut presumably
+    set_current_keymap(app, mapid_normal);
+    end_chord_bar(app);
+
+    View_Summary view = get_active_view(app, AccessAll);
+    View_Summary new_view = open_view(app, &view, ViewSplit_Right);
 }
 
 CUSTOM_COMMAND_SIG(open_window_dup_vsplit){
@@ -1001,9 +1008,6 @@ CUSTOM_COMMAND_SIG(open_window_dup_vsplit){
     end_chord_bar(app);
 
     open_panel_vsplit(app);
-
-    View_Summary newView = get_active_view(app, AccessAll);
-    view_set_buffer(app, &newView, view.buffer_id, AccessAll);
 }
 
 CUSTOM_COMMAND_SIG(focus_window_left) {
@@ -1373,6 +1377,8 @@ CUSTOM_COMMAND_SIG(status_command){
             }
         }
 
+        // TODO(chr): Make these hookable so users can make their own
+        // interactive stuff
         if (match(bar.string, make_lit_string("e "))) {
             exec_command(app, interactive_open);
             return;
@@ -1459,6 +1465,25 @@ VIM_COMMAND_FUNC_SIG(edit_file) {
 }
 
 VIM_COMMAND_FUNC_SIG(new_file) {
+    View_Summary view = get_active_view(app, AccessAll);
+    View_Summary new_view = open_view(app, &view, ViewSplit_Top);
+    new_view_settings(app, &new_view);
+    set_active_view(app, &new_view);
+    if (compare(argstr, make_lit_string("")) == 0) {
+        exec_command(app, interactive_new);
+    } else {
+        Buffer_Summary buffer = create_buffer(app, argstr.str, argstr.size, 0);
+        if (buffer.exists){
+            view_set_buffer(app, &new_view, buffer.buffer_id, SetBuffer_KeepOriginalGUI);
+        }
+    }
+}
+
+VIM_COMMAND_FUNC_SIG(new_file_open_vertical) {
+    View_Summary view = get_active_view(app, AccessAll);
+    View_Summary new_view = open_view(app, &view, ViewSplit_Right);
+    new_view_settings(app, &new_view);
+    set_active_view(app, &new_view);
     exec_command(app, interactive_new);
 }
 
@@ -1539,6 +1564,7 @@ void vim_get_bindings(Bind_Helper* context) {
     define_command(make_lit_string("close"), close_view);
     define_command(make_lit_string("edit"), edit_file);
     define_command(make_lit_string("new"), new_file);
+    define_command(make_lit_string("vnew"), new_file_open_vertical);
     define_command(make_lit_string("colorscheme"), colorscheme);
     define_command(make_lit_string("vs"), vertical_split);
     define_command(make_lit_string("vsplit"), vertical_split);
