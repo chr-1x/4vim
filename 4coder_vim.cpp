@@ -36,6 +36,7 @@ void on_enter_visual_mode(struct Application_Links* app);
 //
 //=============================================================================
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -204,6 +205,47 @@ struct _Defer {
     for (View_Summary view = get_view_first(app, AccessAll);                  \
          view.exists;                                                         \
          get_view_next(app, &view, AccessAll))
+
+#if defined(IS_LINUX)
+#include <pwd.h>
+#include <unistd.h>
+#endif
+
+static int32_t get_user_home_dir(char* out, int32_t out_mem_size) {
+#if defined(IS_LINUX)
+    uid_t uid = getuid();
+    struct passwd *pw = getpwuid(uid);
+    int32_t homedir_len = strlen(pw->pw_dir);
+    if (homedir_len <= out_mem_size && out != nullptr) {
+        strncpy(out, pw->pw_dir, homedir_len);
+    }
+    return homedir_len;
+#else
+    return -1;
+#endif
+}
+
+static bool directory_cd_expand_user(
+    struct Application_Links* app,
+    char* dir_str,
+    int32_t* dir_len,
+    int32_t dir_capacity,
+    char* rel_path,
+    int32_t rel_len) {
+    if (rel_len > 0 && rel_path[0] == '~') {
+        int32_t home_dir_len = get_user_home_dir(nullptr, 0);
+        int32_t expanded_len = home_dir_len + (rel_len - 1);
+        if (expanded_len > dir_capacity) { return false; }
+        get_user_home_dir(dir_str, dir_capacity);
+        String dir = make_string_cap(dir_str, home_dir_len, dir_capacity);
+        append_ss(&dir, make_string(rel_path + 1, rel_len - 1));
+        return true;
+    } else {
+        return directory_cd(app, dir_str, dir_len, dir_capacity, rel_path, rel_len);
+    }
+    
+}
+                                     
 
 //=============================================================================
 // > Custom commands <                                                @commands
@@ -1523,13 +1565,15 @@ VIM_COMMAND_FUNC_SIG(exec_regex) {
 VIM_COMMAND_FUNC_SIG(change_directory) {
     char dir[4096];
     String dirstr = make_fixed_width_string(dir);
-    if (!directory_cd(app, dirstr.str, &dirstr.size, dirstr.memory_size,
-                      argstr.str, argstr.size)) {
+    dirstr.size = directory_get_hot(app, dirstr.str, dirstr.memory_size);
+    assert(dirstr.size < 4096);
+    if (!directory_cd_expand_user(app, dirstr.str, &dirstr.size, dirstr.memory_size,
+                                  argstr.str, argstr.size)) {
         fprintf(stderr, "Couldn't change directory to %.*s\n", argstr.size, argstr.str);
         return;
     }
     fprintf(stderr, "%.*s\n", (int)dirstr.size, dirstr.str);
-    push_to_chord_bar(app, dirstr);
+    directory_set_hot(app, dirstr.str, dirstr.size);
 }
 
 // CALL ME
