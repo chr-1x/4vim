@@ -339,9 +339,6 @@ static void update_visual_range(struct Application_Links* app, int end_new) {
     state.selection_cursor.end = end_new;
     Range normalized = make_range(state.selection_cursor.start, state.selection_cursor.end);
     state.selection_range = make_range(normalized.start, normalized.end + 1);
-    view_set_highlight(app, &view, state.selection_range.start, state.selection_range.end, true);
-
-    view_set_cursor(app, &view, seek_pos(end_new), false);
 }
 
 static void update_visual_line_range(struct Application_Links* app, int end_new) {
@@ -354,9 +351,6 @@ static void update_visual_line_range(struct Application_Links* app, int end_new)
     Range normalized = make_range(state.selection_cursor.start, state.selection_cursor.end);
     state.selection_range = make_range(get_line_start(app, normalized.start), 
                                        get_line_end(app, normalized.end) + 1);
-    view_set_highlight(app, &view, state.selection_range.start, state.selection_range.end, true);
-
-    view_set_cursor(app, &view, seek_pos(end_new), false);
 }
 
 static void end_visual_selection(struct Application_Links* app) {
@@ -367,7 +361,6 @@ static void end_visual_selection(struct Application_Links* app) {
 
     state.selection_range.start = state.selection_range.end = -1;
     state.selection_cursor.start = state.selection_cursor.end = -1;
-    view_set_highlight(app, &view, 0, 0, false);
 }
 
 static int push_to_string(char* str, size_t str_len, size_t str_max,
@@ -1300,6 +1293,7 @@ CUSTOM_COMMAND_SIG(search_under_cursor) {
 
     Range word = get_word_under_cursor(app, &buffer, &view);
     char* wordStr = (char*)malloc(word.end - word.start);
+    defer(free(wordStr));
     buffer_read_range(app, &buffer, word.start, word.end, wordStr);
 
     int new_pos = view.cursor.pos;
@@ -1322,8 +1316,7 @@ CUSTOM_COMMAND_SIG(search_under_cursor) {
 
     vim_exec_action(app, make_range(pos1, pos2), false);
 
-    free(wordStr);
-    return;
+        return;
 }
 
 CUSTOM_COMMAND_SIG(vim_search) {
@@ -1607,8 +1600,200 @@ OPEN_FILE_HOOK_SIG(vim_hook_new_file_func) {
 
 // CALL ME
 // This function should be called from your 4coder render caller to draw the
-// vim-related things on screen. Call it BEFORE do_core_render().
+// vim-related things on screen.
 RENDER_CALLER_SIG(vim_render_caller) {
+    // TODO(chr): Mostly copied from the default render caller. Customize for vim stuff.
+    View_Summary view = get_view(app, view_id, AccessAll);
+    Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessAll);
+    View_Summary active_view = get_active_view(app, AccessAll);
+    bool32 is_active_view = (active_view.view_id == view_id);
+    
+    static Managed_Scope render_scope = 0;
+    if (render_scope == 0){
+        render_scope = create_user_managed_scope(app);
+    }
+    
+    Partition *scratch = &global_part;
+    
+    // NOTE(allen): Scan for TODOs and NOTEs
+    {
+        Theme_Color colors[2];
+        colors[0].tag = Stag_Text_Cycle_2;
+        colors[1].tag = Stag_Text_Cycle_1;
+        get_theme_colors(app, colors, 2);
+        
+        Temp_Memory temp = begin_temp_memory(scratch);
+        int32_t text_size = on_screen_range.one_past_last - on_screen_range.first;
+        char *text = push_array(scratch, char, text_size);
+        buffer_read_range(app, &buffer, on_screen_range.first, on_screen_range.one_past_last, text);
+        
+        Highlight_Record *records = push_array(scratch, Highlight_Record, 0);
+        String tail = make_string(text, text_size);
+        for (int32_t i = 0; i < text_size; tail.str += 1, tail.size -= 1, i += 1){
+            if (match_part(tail, make_lit_string("NOTE"))){
+                Highlight_Record *record = push_array(scratch, Highlight_Record, 1);
+                record->first = i + on_screen_range.first;
+                record->one_past_last = record->first + 4;
+                record->color = colors[0].color;
+                tail.str += 3;
+                tail.size -= 3;
+                i += 3;
+            }
+            else if (match_part(tail, make_lit_string("TODO"))){
+                Highlight_Record *record = push_array(scratch, Highlight_Record, 1);
+                record->first = i + on_screen_range.first;
+                record->one_past_last = record->first + 4;
+                record->color = colors[1].color;
+                tail.str += 3;
+                tail.size -= 3;
+                i += 3;
+            }
+        }
+        int32_t record_count = (int32_t)(push_array(scratch, Highlight_Record, 0) - records);
+        push_array(scratch, Highlight_Record, 1);
+        
+        if (record_count > 0){
+            sort_highlight_record(records, 0, record_count);
+            Temp_Memory marker_temp = begin_temp_memory(scratch);
+            Marker *markers = push_array(scratch, Marker, 0);
+            int_color current_color = records[0].color;
+            {
+                Marker *marker = push_array(scratch, Marker, 2);
+                marker[0].pos = records[0].first;
+                marker[1].pos = records[0].one_past_last;
+            }
+            for (int32_t i = 1; i <= record_count; i += 1){
+                bool32 do_emit = i == record_count || (records[i].color != current_color);
+                if (do_emit){
+                    int32_t marker_count = (int32_t)(push_array(scratch, Marker, 0) - markers);
+                    Managed_Object o = alloc_buffer_markers_on_buffer(app, buffer.buffer_id, marker_count, &render_scope);
+                    managed_object_store_data(app, o, 0, marker_count, markers);
+                    Marker_Visual v = create_marker_visual(app, o);
+                    marker_visual_set_effect(app, v,
+                                             VisualType_CharacterHighlightRanges,
+                                             SymbolicColor_Transparent, current_color, 0);
+                    marker_visual_set_priority(app, v, VisualPriority_Lowest);
+                    end_temp_memory(marker_temp);
+                    current_color = records[i].color;
+                }
+                
+                Marker *marker = push_array(scratch, Marker, 2);
+                marker[0].pos = records[i].first;
+                marker[1].pos = records[i].one_past_last;
+            }
+        }
+        
+        end_temp_memory(temp);
+    }
+    
+    // NOTE(chr): Visual range highlight
+    {
+        Managed_Object highlight_range = alloc_buffer_markers_on_buffer(app, buffer.buffer_id, 2, &render_scope);
+        Marker cm_markers[2] = {};
+        cm_markers[0].pos = state.selection_range.start;
+        cm_markers[1].pos = state.selection_range.end;
+        managed_object_store_data(app, highlight_range, 0, 2, cm_markers);
+
+        Theme_Color color = {};
+        color.tag = Stag_Highlight;
+        get_theme_colors(app, &color, 1);
+
+        Marker_Visual visual = create_marker_visual(app, highlight_range);
+        marker_visual_set_effect(app, visual, VisualType_CharacterHighlightRanges,
+                                 color.color, 0, 0);
+        Marker_Visual_Take_Rule take_rule = {};
+        take_rule.first_index = 0;
+        take_rule.take_count_per_step = 2;
+        take_rule.step_stride_in_marker_count = 1;
+        take_rule.maximum_number_of_markers = 2;
+        marker_visual_set_take_rule(app, visual, take_rule);
+        marker_visual_set_priority(app, visual, VisualPriority_Highest);
+    }
+    
+    // NOTE(allen): Cursor and mark
+    Managed_Object cursor_and_mark = alloc_buffer_markers_on_buffer(app, buffer.buffer_id, 2, &render_scope);
+    Marker cm_markers[2] = {};
+    cm_markers[0].pos = view.cursor.pos;
+    cm_markers[1].pos = view.mark.pos;
+    managed_object_store_data(app, cursor_and_mark, 0, 2, cm_markers);
+    
+    bool32 cursor_is_hidden_in_this_view = (cursor_is_hidden && is_active_view);
+    if (!cursor_is_hidden_in_this_view){
+        Theme_Color colors[2] = {};
+        colors[0].tag = Stag_Cursor;
+        colors[1].tag = Stag_Mark;
+        get_theme_colors(app, colors, 2);
+        int_color cursor_color = SymbolicColorFromPalette(Stag_Cursor);
+        int_color mark_color   = SymbolicColorFromPalette(Stag_Mark);
+        int_color text_color    = is_active_view?
+            SymbolicColorFromPalette(Stag_At_Cursor):SymbolicColorFromPalette(Stag_Default);
+        
+        Marker_Visual_Take_Rule take_rule = {};
+        take_rule.first_index = 0;
+        take_rule.take_count_per_step = 1;
+        take_rule.step_stride_in_marker_count = 1;
+        take_rule.maximum_number_of_markers = 1;
+        
+        Marker_Visual visual = create_marker_visual(app, cursor_and_mark);
+        Marker_Visual_Type type = is_active_view?VisualType_CharacterBlocks:VisualType_CharacterWireFrames;
+        marker_visual_set_effect(app, visual,
+                                 type, cursor_color, text_color, 0);
+        marker_visual_set_take_rule(app, visual, take_rule);
+        marker_visual_set_priority(app, visual, VisualPriority_Highest);
+        
+        visual = create_marker_visual(app, cursor_and_mark);
+        marker_visual_set_effect(app, visual,
+                                 VisualType_CharacterWireFrames, mark_color, 0, 0);
+        take_rule.first_index = 1;
+        marker_visual_set_take_rule(app, visual, take_rule);
+        marker_visual_set_priority(app, visual, VisualPriority_Highest);
+    }
+    
+    // NOTE(allen): Matching enclosure highlight setup
+    static const int32_t color_count = 4;
+    if (do_matching_enclosure_highlight){
+        Theme_Color theme_colors[color_count];
+        int_color colors[color_count];
+        for (int32_t i = 0; i < 4; i += 1){
+            theme_colors[i].tag = Stag_Back_Cycle_1 + i;
+        }
+        get_theme_colors(app, theme_colors, color_count);
+        for (int32_t i = 0; i < 4; i += 1){
+            colors[i] = theme_colors[i].color;
+        }
+        mark_enclosures(app, scratch, render_scope,
+                        &buffer, view.cursor.pos, FindScope_Brace,
+                        VisualType_LineHighlightRanges,
+                        colors, 0, color_count);
+    }
+    if (do_matching_paren_highlight){
+        Theme_Color theme_colors[color_count];
+        int_color colors[color_count];
+        for (int32_t i = 0; i < 4; i += 1){
+            theme_colors[i].tag = Stag_Text_Cycle_1 + i;
+        }
+        get_theme_colors(app, theme_colors, color_count);
+        for (int32_t i = 0; i < 4; i += 1){
+            colors[i] = theme_colors[i].color;
+        }
+        int32_t pos = view.cursor.pos;
+        if (buffer_get_char(app, &buffer, pos) == '('){
+            pos += 1;
+        }
+        else if (pos > 0){
+            if (buffer_get_char(app, &buffer, pos - 1) == ')'){
+                pos -= 1;
+            }
+        }
+        mark_enclosures(app, scratch, render_scope,
+                        &buffer, pos, FindScope_Paren,
+                        VisualType_CharacterBlocks,
+                        0, colors, color_count);
+    }
+    
+    do_core_render(app);
+    
+    managed_scope_clear_self_all_dependent_scopes(app, render_scope);
 }
 
 // CALL ME
@@ -1740,6 +1925,8 @@ void vim_get_bindings(Bind_Helper* context) {
     // A very useful mode!
     begin_map(context, mapid_visual);
     inherit_map(context, mapid_movements);
+    bind(context, 'u', MDFR_CTRL, page_up);
+    bind(context, 'd', MDFR_CTRL, page_down);
     bind(context, 'd', MDFR_NONE, visual_delete);
     bind(context, 'c', MDFR_NONE, visual_change);
     bind(context, 'y', MDFR_NONE, visual_yank);

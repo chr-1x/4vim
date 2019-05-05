@@ -39,7 +39,6 @@ RENDER_CALLER_SIG(chronal_render_caller){
     // NOTE(chr): For the render caller, you MUST call the vim render caller
     // before the default (or anything that calls do_core_render).
     vim_render_caller(app, view_id, on_screen_range, do_core_render);
-    default_render_caller(app, view_id, on_screen_range, do_core_render);
 }
 
 // NOTE(chr): Define the four functions that the vim plugin wants in order
