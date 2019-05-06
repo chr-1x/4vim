@@ -168,6 +168,9 @@ struct Vim_State {
     // TODO(chr): Actually there needs to be one of these per file!
     // Until I can use the GUI customization to make my own, anyway.
     Vim_Query_Bar chord_bar;
+
+    char last_search_mem[100];
+    String last_search;
 };
 
 #define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app,         \
@@ -314,17 +317,21 @@ static void buffer_search_forward(struct Application_Links* app, String word,
     buffer_seek_string_forward(app, &buffer, view.cursor.pos + 1, 0, word.str,
                                word.size, &new_pos);
     if (new_pos < buffer.size && new_pos >= 0) {
-        view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
+        view_set_cursor(app, &view, seek_pos(new_pos), true);
     }
     else {
         buffer_seek_string_forward(app, &buffer, 0, 0, word.str, word.size,
                                    &new_pos);
         if (new_pos < buffer.size && new_pos >= 0) {
-            view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
+            view_set_cursor(app, &view, seek_pos(new_pos), true);
         }
     }
     refresh_view(app, &view);
     int actual_new_cursor_pos = view.cursor.pos;
+    // Update last_search
+    state.last_search = make_fixed_width_string(state.last_search_mem);
+    append_checked_ss(&state.last_search, word);
+    // Do the motion
     vim_exec_action(app, make_range(start_pos, actual_new_cursor_pos), false);
 }
 
@@ -603,13 +610,6 @@ static int buffer_seek_nonalphanumeric_right(Application_Links* app,
         int still_looping = true;
         do {
             for (; pos < stream.end; ++pos) {
-                // Three kinds of characters:
-                //  - word characters, first of a row results in a stop
-                //  - symbol characters, first of a row results in a stop
-                //  - whitespace characters, always skip
-                //  The distinction between the first two is only needed
-                //   because word and symbol characters do not form a "row"
-                //   when intermixed.
                 nextch = stream.data[pos];
                 if (!char_is_alpha_numeric(nextch)) {
                     return pos;
@@ -638,13 +638,6 @@ static int buffer_seek_nonalphanumeric_left(Application_Links* app,
         int still_looping = true;
         do {
             for (; pos >= stream.start; --pos) {
-                // Three kinds of characters:
-                //  - word characters, first of a row results in a stop
-                //  - symbol characters, first of a row results in a stop
-                //  - whitespace characters, always skip
-                //  The distinction between the first two is only needed
-                //   because word and symbol characters do not form a "row"
-                //   when intermixed.
                 nextch = stream.data[pos];
                 if (!char_is_alpha_numeric(nextch)) {
                     return pos;
@@ -666,8 +659,8 @@ static Range get_word_under_cursor(struct Application_Links* app,
                                    View_Summary* view) {
     int pos, start, end;
     pos = view->cursor.pos;
-    start = buffer_seek_nonalphanumeric_right(app, buffer, pos);
-    end = buffer_seek_nonalphanumeric_left(app, buffer, pos);
+    start = buffer_seek_nonalphanumeric_left(app, buffer, pos) + 1;
+    end = buffer_seek_nonalphanumeric_right(app, buffer, pos);
 
     return make_range(start, end);
 }
@@ -1412,7 +1405,8 @@ CUSTOM_COMMAND_SIG(vim_search_reverse) {
 }
 
 CUSTOM_COMMAND_SIG(vim_search_next) {
-    // TODO
+    View_Summary view = get_active_view(app, AccessAll);
+    buffer_search_forward(app, state.last_search, view);
 }
 
 CUSTOM_COMMAND_SIG(vim_search_prev) {
@@ -1904,7 +1898,11 @@ void vim_get_bindings(Bind_Helper* context) {
     define_command(lit("quit"), close_view);
     define_command(lit("quitall"), close_all);
     define_command(lit("qa"), close_all);
+    define_command(lit("exit"), write_file_and_close_view);
+    define_command(lit("x"), write_file_and_close_view);
     define_command(lit("wq"), write_file_and_close_view);
+    define_command(lit("exitall"), write_file_and_close_view);
+    define_command(lit("xa"), write_file_and_close_all);
     define_command(lit("wqa"), write_file_and_close_all);
     define_command(lit("close"), close_view);
     define_command(lit("edit"), edit_file);
@@ -1916,8 +1914,6 @@ void vim_get_bindings(Bind_Helper* context) {
     define_command(lit("sp"), horizontal_split);
     define_command(lit("split"), horizontal_split);
     define_command(lit("cd"), change_directory);
-
-    define_command(lit("exit"), close_view);
 
     // SECTION: Vim keybindings
 
