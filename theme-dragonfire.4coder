@@ -43,12 +43,12 @@ Base = 0xFF694f49;
 Pop1 = 0xFF03CF0C;
 Pop2 = 0xFFFF0000;
 
-Back_Cycle_1 = 0x0CA00000;
-Back_Cycle_2 = 0x0800A000;
-Back_Cycle_3 = 0x080000A0;
-Back_Cycle_4 = 0x08A0A000;
-Text_Cycle_1 = 0xFFA00000;
-Text_Cycle_2 = 0xFF00A000;
+Back_Cycle_1 = 0x040a0707;
+Back_Cycle_2 = 0x080a0707;
+Back_Cycle_3 = 0x0c0a0707;
+Back_Cycle_4 = 0x100a0707;
+Text_Cycle_1 = 0xFFA00000; // TODO
+Text_Cycle_2 = Keyword;    // NOTE
 Text_Cycle_3 = 0xFF0020B0;
 Text_Cycle_4 = 0xFFA0A000;
 

@@ -18,16 +18,12 @@ constexpr int_color color_margin_visual = 0xFF722b04;
 START_HOOK_SIG(chronal_init){
     default_4coder_initialize(app);
     // NOTE(chr): Be sure to call the vim custom's hook!
-    vim_hook_init_func(app, files, file_count, flags, flag_count);
-
-    // no meaning for return
-    return 0;
+    return vim_hook_init_func(app, files, file_count, flags, flag_count);
 }
 
 OPEN_FILE_HOOK_SIG(chronal_file_settings){
     // NOTE(chr): Be sure to call the vim custom's hook!
-    vim_hook_open_file_func(app, buffer_id);
-    return 0;
+    return vim_hook_open_file_func(app, buffer_id);
 }
 
 OPEN_FILE_HOOK_SIG(chronal_new_file){
@@ -36,9 +32,8 @@ OPEN_FILE_HOOK_SIG(chronal_new_file){
 }
 
 RENDER_CALLER_SIG(chronal_render_caller){
-    // NOTE(chr): For the render caller, you MUST call the vim render caller
-    // before the default (or anything that calls do_core_render).
-    vim_render_caller(app, view_id, on_screen_range, do_core_render);
+    // NOTE(chr): Be sure to call the vim custom's hook!
+    return vim_render_caller(app, view_id, on_screen_range, do_core_render);
 }
 
 // NOTE(chr): Define the four functions that the vim plugin wants in order

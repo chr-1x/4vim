@@ -61,6 +61,8 @@ enum Vim_Maps {
     mapid_chord_replace_single,
     mapid_chord_yank,
     mapid_chord_delete,
+    mapid_chord_indent_left,
+    mapid_chord_indent_right,
     mapid_chord_format,
     mapid_chord_mark,
     mapid_chord_g,
@@ -88,6 +90,8 @@ enum Pending_Action {
     vimaction_change_range,
     vimaction_yank_range,
     vimaction_format_range,
+    vimaction_indent_left_range,
+    vimaction_indent_right_range,
 };
 
 struct Vim_Register {
@@ -162,9 +166,9 @@ struct Vim_State {
     int chord_str_len;
 };
 
-#define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app, \
-                                       const String command, \
-                                       const String argstr, \
+#define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app,         \
+                                       const String command,                  \
+                                       const String argstr,                   \
                                        bool force)
 typedef VIM_COMMAND_FUNC_SIG(Vim_Command_Func);
 
@@ -636,8 +640,10 @@ void vim_exec_action(struct Application_Links* app, Range range, bool is_line = 
             copy_into_register(app, &buffer, range, target_register);
         } break;
 
+        case vimaction_indent_left_range:  // TODO(chr)
+        case vimaction_indent_right_range:
         case vimaction_format_range: {
-            // TODO tab width as a user variable
+            // TODO(chr) tab width as a user variable
             buffer_auto_indent(app, &buffer, range.start, range.end - 1, 4, 0);
         } break;
     }
@@ -860,6 +866,18 @@ CUSTOM_COMMAND_SIG(enter_chord_yank){
     push_to_chord_bar(app, lit("y"));
 }
 
+CUSTOM_COMMAND_SIG(enter_chord_indent_left){
+    set_current_keymap(app, mapid_chord_indent_left);
+    state.action = vimaction_indent_left_range;
+    push_to_chord_bar(app, lit("<"));
+}
+
+CUSTOM_COMMAND_SIG(enter_chord_indent_right){
+    set_current_keymap(app, mapid_chord_indent_right);
+    state.action = vimaction_indent_right_range;
+    push_to_chord_bar(app, lit(">"));
+}
+
 CUSTOM_COMMAND_SIG(enter_chord_format){
     set_current_keymap(app, mapid_chord_format);
 
@@ -1017,16 +1035,18 @@ CUSTOM_COMMAND_SIG(open_window_hsplit){
 
     View_Summary view = get_active_view(app, AccessAll);
     View_Summary new_view = open_view(app, &view, ViewSplit_Top);
+    set_active_view(app, &view);
 }
 
 CUSTOM_COMMAND_SIG(open_window_dup_hsplit){
-    View_Summary view = get_active_view(app, AccessAll);
-    
     // ASSUMPTION: End of a ^W window shortcut presumably
     set_current_keymap(app, mapid_normal);
     end_chord_bar(app);
 
-    open_panel_hsplit(app);
+    View_Summary view = get_active_view(app, AccessAll);
+    View_Summary new_view = open_view(app, &view, ViewSplit_Top);
+    view_set_buffer(app, &new_view, view.buffer_id, 0);
+    set_active_view(app, &view);
 }
 
 CUSTOM_COMMAND_SIG(open_window_vsplit){
@@ -1036,16 +1056,18 @@ CUSTOM_COMMAND_SIG(open_window_vsplit){
 
     View_Summary view = get_active_view(app, AccessAll);
     View_Summary new_view = open_view(app, &view, ViewSplit_Right);
+    set_active_view(app, &view);
 }
 
 CUSTOM_COMMAND_SIG(open_window_dup_vsplit){
-    View_Summary view = get_active_view(app, AccessAll);
-    
     // ASSUMPTION: End of a ^W window shortcut presumably
     set_current_keymap(app, mapid_normal);
     end_chord_bar(app);
 
-    open_panel_vsplit(app);
+    View_Summary view = get_active_view(app, AccessAll);
+    View_Summary new_view = open_view(app, &view, ViewSplit_Right);
+    view_set_buffer(app, &new_view, view.buffer_id, 0);
+    set_active_view(app, &view);
 }
 
 CUSTOM_COMMAND_SIG(focus_window_left) {
@@ -1921,6 +1943,8 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, 'd', MDFR_NONE, enter_chord_delete);
     bind(context, 'c', MDFR_NONE, enter_chord_change);
     bind(context, 'y', MDFR_NONE, enter_chord_yank);
+    bind(context, '>', MDFR_NONE, enter_chord_indent_right);
+    bind(context, '<', MDFR_NONE, enter_chord_indent_left);
     bind(context, '=', MDFR_NONE, enter_chord_format);
     bind(context, 'g', MDFR_NONE, enter_chord_g);
     bind(context, 'w', MDFR_CTRL, enter_chord_window);
@@ -1942,6 +1966,7 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, 'u', MDFR_CTRL, page_up);
     bind(context, 'd', MDFR_CTRL, page_down);
     bind(context, 'd', MDFR_NONE, visual_delete);
+    bind(context, 'x', MDFR_NONE, visual_delete);
     bind(context, 'c', MDFR_NONE, visual_change);
     bind(context, 'y', MDFR_NONE, visual_yank);
     bind(context, '=', MDFR_NONE, visual_format);
@@ -2033,6 +2058,17 @@ void vim_get_bindings(Bind_Helper* context) {
     begin_map(context, mapid_chord_yank);
     inherit_map(context, mapid_movements);
     bind(context, 'y', MDFR_NONE, move_line_exec_action);
+    end_map(context);
+
+    // indent+movement chords
+    begin_map(context, mapid_chord_indent_left);
+    inherit_map(context, mapid_movements);
+    bind(context, '<', MDFR_NONE, move_line_exec_action);
+    end_map(context);
+
+    begin_map(context, mapid_chord_indent_right);
+    inherit_map(context, mapid_movements);
+    bind(context, '>', MDFR_NONE, move_line_exec_action);
     end_map(context);
 
     // format+movement chords
