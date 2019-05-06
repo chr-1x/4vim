@@ -127,6 +127,13 @@ Register_Id regid_from_char(Key_Code C) {
     return reg_unnamed;
 }
 
+struct Vim_Query_Bar {
+    bool exists;
+    Query_Bar bar;
+    char contents[50];
+    int contents_len;
+};
+
 struct Vim_State {
     // 37 clipboard registers:
     //  - 1 unnamed
@@ -158,12 +165,9 @@ struct Vim_State {
     //    operations
     Range selection_range;
 
-    //TODO(chronister): Actually there needs to be one of these per file!
+    // TODO(chr): Actually there needs to be one of these per file!
     // Until I can use the GUI customization to make my own, anyway.
-    bool chord_bar_exists;
-    Query_Bar chord_bar;
-    char chord_str[10];
-    int chord_str_len;
+    Vim_Query_Bar chord_bar;
 };
 
 #define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app,         \
@@ -184,18 +188,16 @@ struct Vim_Command_Defn {
 
 static Vim_State state = {};
 
-//TODO(chronister): Make these be dynamic and be a hashtable
+// TODO(chr): Make these be dynamic and be a hashtable
 static Vim_Command_Defn defined_commands[512];
 static int defined_command_count = 0;
 
 //=============================================================================
 // > Helpers <                                                         @helpers
 // Some miscellaneous helper structs and functions.
-//
-// Defer: Run some code when the scope exits, regardless of how it exited.
 //=============================================================================
 
-// Defer:                                                                @defer
+// Defer: Run some code when the scope exits, regardless of how it exited.                                                               @defer
 // Wah wah C++. Why can't I use a lambda without including this massive header?
 #include <functional>
 
@@ -232,6 +234,30 @@ static int32_t get_user_home_dir(char* out, int32_t out_mem_size) {
 #endif
 }
 
+namespace {
+
+// Forward declare these for ease of use since they call between each other
+static void enter_normal_mode(struct Application_Links *app, int buffer_id);
+static void enter_insert_mode(struct Application_Links *app, int buffer_id);
+static void update_visual_range(struct Application_Links* app, int end_new);
+static void update_visual_line_range(struct Application_Links* app,
+                                     int end_new);
+static void end_visual_selection(struct Application_Links* app);
+static void copy_into_register(struct Application_Links* app,
+                               Buffer_Summary* buffer, Range range,
+                               Vim_Register* target_register);
+static void buffer_search_forward(struct Application_Links* app, String word,
+                                  View_Summary view);
+static bool active_view_to_line(struct Application_Links* app, int line);
+static int get_line_start(struct Application_Links* app, int cursor = -1);
+static int get_cursor_pos(struct Application_Links* app);
+static char get_cursor_char(struct Application_Links* app, int offset = 0);
+static void push_to_chord_bar(struct Application_Links* app, const String str);
+static void end_chord_bar(struct Application_Links* app);
+static void clear_register_selection();
+static void vim_exec_action(struct Application_Links* app, Range range,
+                            bool is_line = false);
+
 static bool directory_cd_expand_user(
     struct Application_Links* app,
     char* dir_str,
@@ -252,27 +278,69 @@ static bool directory_cd_expand_user(
         return directory_cd(app, dir_str, dir_len, dir_capacity, rel_path, rel_len);
     }
 }
-                                     
 
-//=============================================================================
-// > Custom commands <                                                @commands
-// Commands that do things.
-//=============================================================================
+static void enter_insert_mode(struct Application_Links *app, int buffer_id) {
+    unsigned int access = AccessAll;
+    Buffer_Summary buffer;
+    
+    if (state.mode == mode_visual ||
+        state.mode == mode_visual_line) {
+        end_visual_selection(app);
+    }
 
-static bool32 active_view_to_line(struct Application_Links* app, int line)
-{
+    state.action = vimaction_none;
+    state.mode = mode_insert;
+    end_chord_bar(app);
+
+    buffer = get_buffer(app, buffer_id, access);
+    buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_insert);
+
+    on_enter_insert_mode(app);
+}
+
+static void copy_into_register(struct Application_Links* app,
+                               Buffer_Summary* buffer, Range range,
+                               Vim_Register* target_register) {
+    free(target_register->text.str);
+    target_register->text = make_string((char*)malloc(range.end - range.start), range.end - range.start);
+    buffer_read_range(app, buffer, range.start, range.end, target_register->text.str);
+}
+
+static void buffer_search_forward(struct Application_Links* app, String word,
+                                  View_Summary view) {
+    Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessAll);
+    int start_pos = view.cursor.pos;
+    int new_pos = start_pos;
+    buffer_seek_string_forward(app, &buffer, view.cursor.pos + 1, 0, word.str,
+                               word.size, &new_pos);
+    if (new_pos < buffer.size && new_pos >= 0) {
+        view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
+    }
+    else {
+        buffer_seek_string_forward(app, &buffer, 0, 0, word.str, word.size,
+                                   &new_pos);
+        if (new_pos < buffer.size && new_pos >= 0) {
+            view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
+        }
+    }
+    refresh_view(app, &view);
+    int actual_new_cursor_pos = view.cursor.pos;
+    vim_exec_action(app, make_range(start_pos, actual_new_cursor_pos), false);
+}
+
+static bool active_view_to_line(struct Application_Links* app, int line) {
     View_Summary view = get_active_view(app, AccessProtected);
     if (!view.exists) return false;
-
-    if (!view_set_cursor(app, &view, seek_line_char(line, 0), false)) return false;
-
+    if (!view_set_cursor(app, &view, seek_line_char(line, 0), false)) {
+        return false;
+    }
     GUI_Scroll_Vars scroll = view.scroll_vars;
     scroll.target_y = line;
     return view_set_scroll(app, &view, scroll);
 }
 
-static int get_current_view_buffer_id(struct Application_Links* app, int access)
-{
+static int get_current_view_buffer_id(struct Application_Links* app,
+                                      int access) {
     View_Summary view = get_active_view(app, access);
     return view.buffer_id;
 }
@@ -287,7 +355,7 @@ static void set_current_keymap(struct Application_Links* app, int map) {
     buffer_set_setting(app, &buffer, BufferSetting_MapID, map);
 }
 
-static char get_cursor_char(struct Application_Links* app, int offset = 0) {
+static char get_cursor_char(struct Application_Links* app, int offset) {
     Buffer_Summary buffer;
     View_Summary view;
     
@@ -310,7 +378,7 @@ static int get_cursor_pos(struct Application_Links* app) {
     return view.cursor.pos;
 }
 
-static int get_line_start(struct Application_Links* app, int cursor = -1) {
+static int get_line_start(struct Application_Links* app, int cursor) {
     unsigned int access = AccessAll;
     View_Summary view = get_active_view(app, access);
     Buffer_Summary buffer = get_buffer(app, view.buffer_id, access);
@@ -368,7 +436,7 @@ static void end_visual_selection(struct Application_Links* app) {
 }
 
 static int push_to_string(char* str, size_t str_len, size_t str_max,
-                           char* dest, size_t dest_len) {
+                          char* dest, size_t dest_len) {
     int i = 0;
     for (i; i < dest_len && i < (str_max - str_len); ++i)
     {
@@ -378,23 +446,28 @@ static int push_to_string(char* str, size_t str_len, size_t str_max,
 }
 
 static void push_to_chord_bar(struct Application_Links* app, const String str) {
-    if (!state.chord_bar_exists) {
-        if (start_query_bar(app, &state.chord_bar, 0) == 0) return;
-        state.chord_str_len = 0;
-        memset(state.chord_str, '\0', ArrayCount(state.chord_str));
-        state.chord_bar_exists = true;
+    if (!state.chord_bar.exists) {
+        if (start_query_bar(app, &state.chord_bar.bar, 0) == 0) return;
+        state.chord_bar.contents_len = 0;
+        memset(state.chord_bar.contents, '\0',
+               ArrayCount(state.chord_bar.contents));
+        state.chord_bar.exists = true;
     }
-    state.chord_str_len = push_to_string(state.chord_str, state.chord_str_len, ArrayCount(state.chord_str),
-                                         str.str, str.size);
-    state.chord_bar.string = make_string(state.chord_str, state.chord_str_len, ArrayCount(state.chord_str));
+    state.chord_bar.contents_len = push_to_string(
+        state.chord_bar.contents, state.chord_bar.contents_len,
+        ArrayCount(state.chord_bar.contents), str.str, str.size);
+    state.chord_bar.bar.string = make_string(
+        state.chord_bar.contents, state.chord_bar.contents_len,
+        ArrayCount(state.chord_bar.contents));
 }
 
 static void end_chord_bar(struct Application_Links* app) {
-    if (state.chord_bar_exists) {
-        end_query_bar(app, &state.chord_bar, 0);
-        state.chord_str_len = 0;
-        memset(state.chord_str, '\0', ArrayCount(state.chord_str));
-        state.chord_bar_exists = false;
+    if (state.chord_bar.exists) {
+        end_query_bar(app, &state.chord_bar.bar, 0);
+        state.chord_bar.contents_len = 0;
+        memset(state.chord_bar.contents, '\0',
+               ArrayCount(state.chord_bar.contents));
+        state.chord_bar.exists = false;
     }
 }
 
@@ -402,8 +475,64 @@ static void clear_register_selection() {
     state.yank_register = state.paste_register = reg_unnamed;
 }
 
-static int
-buffer_seek_next_word(Application_Links* app, Buffer_Summary* buffer, int pos) {
+static void vim_exec_action(struct Application_Links* app, Range range,
+                            bool is_line) {
+    Buffer_Summary buffer;
+    View_Summary view;
+    
+    unsigned int access = AccessAll;
+    view = get_active_view(app, access);
+    buffer = get_buffer(app, view.buffer_id, access);
+
+    switch (state.action) {
+        case vimaction_delete_range: 
+        case vimaction_change_range: {
+            Vim_Register* target_register = state.registers + state.yank_register;
+            target_register->is_line = is_line;
+ 
+            copy_into_register(app, &buffer, range, state.registers + state.yank_register);
+            
+            buffer_replace_range(app, &buffer, range.start, range.end, "", 0);
+
+            if (state.action == vimaction_change_range) {
+                enter_insert_mode(app, buffer.buffer_id);
+            }
+        } break;
+
+        case vimaction_yank_range: {
+            Vim_Register* target_register = state.registers + state.yank_register;
+            target_register->is_line = is_line;
+
+            copy_into_register(app, &buffer, range, target_register);
+        } break;
+
+        case vimaction_indent_left_range:  // TODO(chr)
+        case vimaction_indent_right_range:
+        case vimaction_format_range: {
+            // TODO(chr) tab width as a user variable
+            buffer_auto_indent(app, &buffer, range.start, range.end - 1, 4, 0);
+        } break;
+    }
+
+    switch (state.mode) {
+        case mode_normal: {
+            enter_normal_mode(app, buffer.buffer_id);
+        } break;
+
+        case mode_visual: {
+            update_visual_range(app, view.cursor.pos);
+            set_current_keymap(app, mapid_visual);
+        } break;
+
+        case mode_visual_line: {
+            update_visual_line_range(app, view.cursor.pos);
+            set_current_keymap(app, mapid_visual);
+        } break;
+    }
+}
+
+static int buffer_seek_next_word(Application_Links* app, Buffer_Summary* buffer,
+                                 int pos) {
     char chunk[1024];
     int chunk_size = sizeof(chunk);
     Stream_Chunk stream = {};
@@ -462,8 +591,8 @@ buffer_seek_next_word(Application_Links* app, Buffer_Summary* buffer, int pos) {
     return pos;
 }
 
-static int
-buffer_seek_nonalphanumeric_right(Application_Links* app, Buffer_Summary* buffer, int pos) {
+static int buffer_seek_nonalphanumeric_right(Application_Links* app,
+                                             Buffer_Summary* buffer, int pos) {
     char chunk[1024];
     int chunk_size = sizeof(chunk);
     Stream_Chunk stream = {};
@@ -497,8 +626,8 @@ buffer_seek_nonalphanumeric_right(Application_Links* app, Buffer_Summary* buffer
     return pos;
 }
 
-static int
-buffer_seek_nonalphanumeric_left(Application_Links* app, Buffer_Summary* buffer, int pos) {
+static int buffer_seek_nonalphanumeric_left(Application_Links* app,
+                                            Buffer_Summary* buffer, int pos) {
     char chunk[1024];
     int chunk_size = sizeof(chunk);
     Stream_Chunk stream = {};
@@ -532,10 +661,9 @@ buffer_seek_nonalphanumeric_left(Application_Links* app, Buffer_Summary* buffer,
     return pos;
 }
 
-static Range
-get_word_under_cursor(struct Application_Links* app,
-                      Buffer_Summary* buffer,
-                      View_Summary* view) {
+static Range get_word_under_cursor(struct Application_Links* app,
+                                   Buffer_Summary* buffer,
+                                   View_Summary* view) {
     int pos, start, end;
     pos = view->cursor.pos;
     start = buffer_seek_nonalphanumeric_right(app, buffer, pos);
@@ -543,6 +671,27 @@ get_word_under_cursor(struct Application_Links* app,
 
     return make_range(start, end);
 }
+
+static void enter_normal_mode(struct Application_Links *app, int buffer_id) {
+    unsigned int access = AccessAll;
+    Buffer_Summary buffer;
+    if (state.mode == mode_visual || state.mode == mode_visual_line) {
+        end_visual_selection(app);
+    }
+    state.action = vimaction_none;
+    state.mode = mode_normal;
+    end_chord_bar(app);
+    buffer = get_buffer(app, buffer_id, access);
+    buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_normal);
+    on_enter_normal_mode(app);
+}
+
+}  // namespace
+
+//=============================================================================
+// > Custom commands <                                                @commands
+// Commands that do things.
+//=============================================================================
 
 CUSTOM_COMMAND_SIG(enter_normal_mode_with_register) {
     if (state.mode == mode_visual ||
@@ -558,111 +707,8 @@ CUSTOM_COMMAND_SIG(enter_normal_mode_with_register) {
     on_enter_normal_mode(app);
 }
 
-static void enter_normal_mode(struct Application_Links *app, int buffer_id){
-    unsigned int access = AccessAll;
-    Buffer_Summary buffer;
-    
-    if (state.mode == mode_visual ||
-        state.mode == mode_visual_line) {
-        end_visual_selection(app);
-    }
-
-    state.action = vimaction_none;
-    state.mode = mode_normal;
-    end_chord_bar(app);
-
-    buffer = get_buffer(app, buffer_id, access);
-    buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_normal);
-
-    on_enter_normal_mode(app);
-}
-
 CUSTOM_COMMAND_SIG(enter_normal_mode_on_current) {
     enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
-}
-
-static void enter_insert_mode(struct Application_Links *app, int buffer_id){
-    unsigned int access = AccessAll;
-    Buffer_Summary buffer;
-    
-    if (state.mode == mode_visual ||
-        state.mode == mode_visual_line) {
-        end_visual_selection(app);
-    }
-
-    state.action = vimaction_none;
-    state.mode = mode_insert;
-    end_chord_bar(app);
-
-    buffer = get_buffer(app, buffer_id, access);
-    buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_insert);
-
-    on_enter_insert_mode(app);
-}
-
-void copy_into_register(struct Application_Links* app,
-                        Buffer_Summary* buffer,
-                        Range range,
-                        Vim_Register* target_register) {
-    free(target_register->text.str);
-    target_register->text = make_string((char*)malloc(range.end - range.start), range.end - range.start);
-    buffer_read_range(app, buffer, range.start, range.end, target_register->text.str);
-}
-
-void vim_exec_action(struct Application_Links* app, Range range, bool is_line = false)
-{
-    Buffer_Summary buffer;
-    View_Summary view;
-    
-    unsigned int access = AccessAll;
-    view = get_active_view(app, access);
-    buffer = get_buffer(app, view.buffer_id, access);
-
-    switch (state.action) {
-        case vimaction_delete_range: 
-        case vimaction_change_range: {
-            Vim_Register* target_register = state.registers + state.yank_register;
-            target_register->is_line = is_line;
- 
-            copy_into_register(app, &buffer, range, state.registers + state.yank_register);
-            
-            buffer_replace_range(app, &buffer, range.start, range.end, "", 0);
-
-            if (state.action == vimaction_change_range) {
-                enter_insert_mode(app, buffer.buffer_id);
-            }
-        } break;
-
-        case vimaction_yank_range: {
-            Vim_Register* target_register = state.registers + state.yank_register;
-            target_register->is_line = is_line;
-
-            copy_into_register(app, &buffer, range, target_register);
-        } break;
-
-        case vimaction_indent_left_range:  // TODO(chr)
-        case vimaction_indent_right_range:
-        case vimaction_format_range: {
-            // TODO(chr) tab width as a user variable
-            buffer_auto_indent(app, &buffer, range.start, range.end - 1, 4, 0);
-        } break;
-    }
-
-    switch (state.mode) {
-        case mode_normal: {
-            enter_normal_mode(app, buffer.buffer_id);
-        } break;
-
-        case mode_visual: {
-            update_visual_range(app, view.cursor.pos);
-            set_current_keymap(app, mapid_visual);
-        } break;
-
-        case mode_visual_line: {
-            update_visual_line_range(app, view.cursor.pos);
-            set_current_keymap(app, mapid_visual);
-        } break;
-    }
 }
 
 CUSTOM_COMMAND_SIG(enter_replace_mode){
@@ -1301,8 +1347,9 @@ CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
     }
 }
 
-//TODO(chronister): This will search for weird things like whitespace and symbols if that's what the cursor is over.
-//Should ignore if not on an alphanumeric character.
+// TODO(chr): This will search for weird things like whitespace and
+// symbols if that's what the cursor is over.  Should ignore if not on an
+// alphanumeric character.
 CUSTOM_COMMAND_SIG(search_under_cursor) {
     View_Summary view;
     Buffer_Summary buffer;
@@ -1317,39 +1364,45 @@ CUSTOM_COMMAND_SIG(search_under_cursor) {
     char* wordStr = (char*)malloc(word.end - word.start);
     defer(free(wordStr));
     buffer_read_range(app, &buffer, word.start, word.end, wordStr);
-
-    int new_pos = view.cursor.pos;
-
-    buffer_seek_string_forward(app, &buffer, view.cursor.pos + 1, 0,
-                               wordStr, word.end - word.start, &new_pos);
-    if (new_pos < buffer.size && new_pos >= 0) {
-        view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
-    }
-    else {
-        buffer_seek_string_forward(app, &buffer, 0, 0,
-                                   wordStr, word.end - word.start, &new_pos);
-        if (new_pos < buffer.size && new_pos >= 0) {
-            view_set_cursor(app, &view, seek_pos(new_pos + 1), true);
-        }
-    }
-
-    refresh_view(app, &view);
-    int pos2 = view.cursor.pos;
-
-    vim_exec_action(app, make_range(pos1, pos2), false);
-
-        return;
+    buffer_search_forward(app, make_string(wordStr, word.end - word.start),
+                          view);
 }
 
 CUSTOM_COMMAND_SIG(vim_search) {
-    View_Summary view;
-    Buffer_Summary buffer;
-
-    view = get_active_view(app, AccessAll);
-    buffer = get_buffer(app, view.buffer_id, AccessAll);
+    View_Summary view = get_active_view(app, AccessAll);
+    Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessAll);
     if (!buffer.exists) return;
-
-    // TODO
+    // Start the search query bar
+    Query_Bar bar;
+    if (start_query_bar(app, &bar, 0) == 0) return;
+    defer(end_query_bar(app, &bar, 0));
+    // Bar string
+    char bar_string_space[256];
+    bar.string = make_fixed_width_string(bar_string_space);
+    bar.prompt = make_lit_string("/");
+    // Handle the query bar
+    User_Input in;
+    while (true) {
+        in = get_user_input(app, EventOnAnyKey, EventOnEsc);
+        if (in.abort) break;
+        if (in.key.keycode == '\n'){
+            break;
+        }
+        else if (in.key.keycode == '\t') {
+            // Ignore it
+        }
+        else if (in.key.character && key_is_unmodified(&in.key)){
+            append(&bar.string, (char)in.key.character);
+        }
+        else if (in.key.keycode == key_back){
+            if (bar.string.size > 0){
+                --bar.string.size;
+            }
+        }
+    }
+    if (in.abort) return;
+    // Do the search
+    buffer_search_forward(app, bar.string, view);
 }
 
 CUSTOM_COMMAND_SIG(vim_search_reverse) {
@@ -1525,7 +1578,6 @@ VIM_COMMAND_FUNC_SIG(write_file) {
     }
 }
 
-
 VIM_COMMAND_FUNC_SIG(edit_file) {
     exec_command(app, interactive_open);
 }
@@ -1584,7 +1636,6 @@ VIM_COMMAND_FUNC_SIG(write_file_and_close_view) {
     close_view(app, command, argstr, force);
 }
 
-
 VIM_COMMAND_FUNC_SIG(vertical_split) {
     open_panel_vsplit(app);
 }
@@ -1610,6 +1661,14 @@ VIM_COMMAND_FUNC_SIG(change_directory) {
     fprintf(stderr, "%.*s\n", (int)dirstr.size, dirstr.str);
     directory_set_hot(app, dirstr.str, dirstr.size);
 }
+
+//=============================================================================
+// > 4coder Hooks <                                                      @hooks
+// Vim's implementation for the important 4coder hooks
+//
+// You need to call these from your implementations of these hooks for 4vim to
+// work correctly!
+//=============================================================================
 
 // CALL ME
 // This function should be called from your 4coder custom init hook
