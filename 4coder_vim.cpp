@@ -679,11 +679,13 @@ static void enter_normal_mode(struct Application_Links *app, int buffer_id) {
         end_visual_selection(app);
     }
     state.action = vimaction_none;
-    state.mode = mode_normal;
     end_chord_bar(app);
     buffer = get_buffer(app, buffer_id, access);
     buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_normal);
-    on_enter_normal_mode(app);
+    if (state.mode != mode_normal) {
+        state.mode = mode_normal;
+        on_enter_normal_mode(app);
+    }
 }
 
 }  // namespace
