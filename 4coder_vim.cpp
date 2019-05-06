@@ -94,6 +94,17 @@ enum Pending_Action {
     vimaction_indent_right_range,
 };
 
+enum Search_Direction {
+    search_backward = -1,
+    search_forward = 1,
+};
+
+struct Search_Context {
+    Search_Direction direction;
+    String text;
+    char text_buffer[100];
+};
+
 struct Vim_Register {
     String text;
     bool is_line;
@@ -169,8 +180,7 @@ struct Vim_State {
     // Until I can use the GUI customization to make my own, anyway.
     Vim_Query_Bar chord_bar;
 
-    char last_search_mem[100];
-    String last_search;
+    Search_Context last_search;
 };
 
 #define VIM_COMMAND_FUNC_SIG(n) void n(struct Application_Links *app,         \
@@ -249,8 +259,6 @@ static void end_visual_selection(struct Application_Links* app);
 static void copy_into_register(struct Application_Links* app,
                                Buffer_Summary* buffer, Range range,
                                Vim_Register* target_register);
-static void buffer_search_forward(struct Application_Links* app, String word,
-                                  View_Summary view);
 static bool active_view_to_line(struct Application_Links* app, int line);
 static int get_line_start(struct Application_Links* app, int cursor = -1);
 static int get_cursor_pos(struct Application_Links* app);
@@ -309,19 +317,23 @@ static void copy_into_register(struct Application_Links* app,
     buffer_read_range(app, buffer, range.start, range.end, target_register->text.str);
 }
 
-static void buffer_search_forward(struct Application_Links* app, String word,
-                                  View_Summary view) {
+static void buffer_search(struct Application_Links* app, String word,
+                          View_Summary view, Search_Direction direction) {
+    const auto& buffer_seek_func =
+        (direction == search_forward ? buffer_seek_string_forward :
+         buffer_seek_string_backward);
+
     Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessAll);
     int start_pos = view.cursor.pos;
     int new_pos = start_pos;
-    buffer_seek_string_forward(app, &buffer, view.cursor.pos + 1, 0, word.str,
-                               word.size, &new_pos);
+
+    buffer_seek_func(app, &buffer, view.cursor.pos + direction, 0, word.str,
+                     word.size, &new_pos);
     if (new_pos < buffer.size && new_pos >= 0) {
         view_set_cursor(app, &view, seek_pos(new_pos), true);
-    }
-    else {
-        buffer_seek_string_forward(app, &buffer, 0, 0, word.str, word.size,
-                                   &new_pos);
+    } else {
+        int wrap = (direction == search_forward ? 0 : buffer.size - 1);
+        buffer_seek_func(app, &buffer, wrap, 0, word.str, word.size, &new_pos);
         if (new_pos < buffer.size && new_pos >= 0) {
             view_set_cursor(app, &view, seek_pos(new_pos), true);
         }
@@ -329,8 +341,10 @@ static void buffer_search_forward(struct Application_Links* app, String word,
     refresh_view(app, &view);
     int actual_new_cursor_pos = view.cursor.pos;
     // Update last_search
-    state.last_search = make_fixed_width_string(state.last_search_mem);
-    append_checked_ss(&state.last_search, word);
+    state.last_search.direction = direction;
+    state.last_search.text = make_fixed_width_string(
+        state.last_search.text_buffer);
+    append_checked_ss(&state.last_search.text, word);
     // Do the motion
     vim_exec_action(app, make_range(start_pos, actual_new_cursor_pos), false);
 }
@@ -679,6 +693,44 @@ static void enter_normal_mode(struct Application_Links *app, int buffer_id) {
         state.mode = mode_normal;
         on_enter_normal_mode(app);
     }
+}
+
+static void buffer_query_search(struct Application_Links* app,
+                                Search_Direction direction) {
+    View_Summary view = get_active_view(app, AccessAll);
+    Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessAll);
+    if (!buffer.exists) return;
+    // Start the search query bar
+    Query_Bar bar;
+    if (start_query_bar(app, &bar, 0) == 0) return;
+    defer(end_query_bar(app, &bar, 0));
+    // Bar string
+    char bar_string_space[256];
+    bar.string = make_fixed_width_string(bar_string_space);
+    bar.prompt = make_lit_string(direction == search_forward ? "/" : "?");
+    // Handle the query bar
+    User_Input in;
+    while (true) {
+        in = get_user_input(app, EventOnAnyKey, EventOnEsc);
+        if (in.abort) break;
+        if (in.key.keycode == '\n'){
+            break;
+        }
+        else if (in.key.keycode == '\t') {
+            // Ignore it
+        }
+        else if (in.key.character && key_is_unmodified(&in.key)){
+            append(&bar.string, (char)in.key.character);
+        }
+        else if (in.key.keycode == key_back){
+            if (bar.string.size > 0){
+                --bar.string.size;
+            }
+        }
+    }
+    if (in.abort) return;
+    // Do the search
+    buffer_search(app, bar.string, view, direction);
 }
 
 }  // namespace
@@ -1302,7 +1354,7 @@ CUSTOM_COMMAND_SIG(select_register) {
 }
 
 CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
-    //@copypasta from 4coder_default_include.cpp
+    // @COPYPASTA from 4coder_default_include.cpp
     View_Summary view;
     Buffer_Summary buffer;
     char short_file_name[128];
@@ -1333,84 +1385,45 @@ CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
         remove_last_folder(&file_name);
         append(&file_name, make_string(short_file_name, size));
         
-#if 0
-        push_parameter(app, par_name, expand_str(file_name));
-        exec_command(app, cmdid_interactive_open);
-#endif
-        
         view_open_file(app, &view, expand_str(file_name), false);
     }
 }
 
-// TODO(chr): This will search for weird things like whitespace and
-// symbols if that's what the cursor is over.  Should ignore if not on an
-// alphanumeric character.
 CUSTOM_COMMAND_SIG(search_under_cursor) {
     View_Summary view;
     Buffer_Summary buffer;
-
     view = get_active_view(app, AccessAll);
     buffer = get_buffer(app, view.buffer_id, AccessAll);
     if (!buffer.exists) return;
-
-    int pos1 = view.cursor.pos;
-
     Range word = get_word_under_cursor(app, &buffer, &view);
     char* wordStr = (char*)malloc(word.end - word.start);
     defer(free(wordStr));
     buffer_read_range(app, &buffer, word.start, word.end, wordStr);
-    buffer_search_forward(app, make_string(wordStr, word.end - word.start),
-                          view);
+    buffer_search(app, make_string(wordStr, word.end - word.start), view,
+                  search_forward);
 }
 
 CUSTOM_COMMAND_SIG(vim_search) {
-    View_Summary view = get_active_view(app, AccessAll);
-    Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessAll);
-    if (!buffer.exists) return;
-    // Start the search query bar
-    Query_Bar bar;
-    if (start_query_bar(app, &bar, 0) == 0) return;
-    defer(end_query_bar(app, &bar, 0));
-    // Bar string
-    char bar_string_space[256];
-    bar.string = make_fixed_width_string(bar_string_space);
-    bar.prompt = make_lit_string("/");
-    // Handle the query bar
-    User_Input in;
-    while (true) {
-        in = get_user_input(app, EventOnAnyKey, EventOnEsc);
-        if (in.abort) break;
-        if (in.key.keycode == '\n'){
-            break;
-        }
-        else if (in.key.keycode == '\t') {
-            // Ignore it
-        }
-        else if (in.key.character && key_is_unmodified(&in.key)){
-            append(&bar.string, (char)in.key.character);
-        }
-        else if (in.key.keycode == key_back){
-            if (bar.string.size > 0){
-                --bar.string.size;
-            }
-        }
-    }
-    if (in.abort) return;
-    // Do the search
-    buffer_search_forward(app, bar.string, view);
+    buffer_query_search(app, search_forward);
 }
 
 CUSTOM_COMMAND_SIG(vim_search_reverse) {
-    // TODO
+    buffer_query_search(app, search_backward);
 }
 
 CUSTOM_COMMAND_SIG(vim_search_next) {
     View_Summary view = get_active_view(app, AccessAll);
-    buffer_search_forward(app, state.last_search, view);
+    buffer_search(app, state.last_search.text, view,
+                  state.last_search.direction);
 }
 
 CUSTOM_COMMAND_SIG(vim_search_prev) {
-    // TODO
+    View_Summary view = get_active_view(app, AccessAll);
+    Search_Direction current_direction = state.last_search.direction;
+    buffer_search(app, state.last_search.text, view,
+                  (Search_Direction)(-current_direction));
+    // Preserve search direction
+    state.last_search.direction = current_direction;
 }
 
 CUSTOM_COMMAND_SIG(vim_delete_char) {
