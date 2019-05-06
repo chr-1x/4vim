@@ -9,7 +9,8 @@
 #include "4coder_vim.cpp"
 
 // These colors are tuned to work with the Dragonfire color scheme.
-// TODO(chr): How to best make this configurable?
+// TODO(chr): How to best make this configurable? Can we query for arbitrary
+// variables in the theme?
 constexpr int_color color_margin_normal = 0xFF341313;
 constexpr int_color color_margin_insert = 0xFF5a3619;
 constexpr int_color color_margin_replace = 0xFF5a192e;
@@ -19,21 +20,6 @@ START_HOOK_SIG(chronal_init) {
     default_4coder_initialize(app);
     // NOTE(chr): Be sure to call the vim custom's hook!
     return vim_hook_init_func(app, files, file_count, flags, flag_count);
-}
-
-OPEN_FILE_HOOK_SIG(chronal_file_settings) {
-    // NOTE(chr): Be sure to call the vim custom's hook!
-    return vim_hook_open_file_func(app, buffer_id);
-}
-
-OPEN_FILE_HOOK_SIG(chronal_new_file) {
-    // NOTE(chr): Be sure to call the vim custom's hook!
-    return vim_hook_new_file_func(app, buffer_id);
-}
-
-RENDER_CALLER_SIG(chronal_render_caller) {
-    // NOTE(chr): Be sure to call the vim custom's hook!
-    return vim_render_caller(app, view_id, on_screen_range, do_core_render);
 }
 
 // NOTE(chr): Define the four functions that the vim plugin wants in order
@@ -74,9 +60,9 @@ void on_enter_visual_mode(struct Application_Links *app) {
 void chronal_get_bindings(Bind_Helper *context) {
     // Set the hooks
     set_start_hook(context, chronal_init);
-    set_open_file_hook(context, chronal_file_settings);
-    set_new_file_hook(context, chronal_new_file);
-    set_render_caller(context, chronal_render_caller);
+    set_open_file_hook(context, vim_hook_open_file_func);
+    set_new_file_hook(context, vim_hook_new_file_func);
+    set_render_caller(context, vim_render_caller);
 
     // Call to set the vim bindings
     vim_get_bindings(context);
@@ -96,6 +82,7 @@ void chronal_get_bindings(Bind_Helper *context) {
     // As an example, suppose we want to be able to use 'save' to write the
     // current file:
     define_command(make_lit_string("save"), write_file);
+    define_command(make_lit_string("W"), write_file);
     // (In regular vim, :saveas is a valid command, but this hasn't yet
     // been defined in the 4coder vim layer. If it were, this definition 
     // would be pointless, as :save would match as a substring of :saveas 

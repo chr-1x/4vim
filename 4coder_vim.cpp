@@ -94,17 +94,6 @@ enum Pending_Action {
     vimaction_indent_right_range,
 };
 
-enum Search_Direction {
-    search_backward = -1,
-    search_forward = 1,
-};
-
-struct Search_Context {
-    Search_Direction direction;
-    String text;
-    char text_buffer[100];
-};
-
 struct Vim_Register {
     String text;
     bool is_line;
@@ -112,7 +101,7 @@ struct Vim_Register {
 
 enum Register_Id {
     reg_unnamed = 0,
-    reg_sysclip,
+    reg_system_clipboard,
     reg_a, reg_b, reg_c, reg_d, reg_e, reg_f, reg_g, reg_h, reg_i, 
     reg_j, reg_k, reg_l, reg_m, reg_n, reg_o, reg_p, reg_q, reg_r, 
     reg_s, reg_t, reg_u, reg_v, reg_w, reg_x, reg_y, reg_z,
@@ -133,10 +122,21 @@ Register_Id regid_from_char(Key_Code C) {
     }
     if (C == '0') { return reg_0; }
 
-    if (C == '*') { return reg_sysclip; }
+    if (C == '*') { return reg_system_clipboard; }
 
     return reg_unnamed;
 }
+
+enum Search_Direction {
+    search_backward = -1,
+    search_forward = 1,
+};
+
+struct Search_Context {
+    Search_Direction direction;
+    String text;
+    char text_buffer[100];
+};
 
 struct Vim_Query_Bar {
     bool exists;
@@ -671,23 +671,19 @@ static int buffer_seek_nonalphanumeric_left(Application_Links* app,
 static Range get_word_under_cursor(struct Application_Links* app,
                                    Buffer_Summary* buffer,
                                    View_Summary* view) {
-    int pos, start, end;
-    pos = view->cursor.pos;
-    start = buffer_seek_nonalphanumeric_left(app, buffer, pos) + 1;
-    end = buffer_seek_nonalphanumeric_right(app, buffer, pos);
-
+    int pos = view->cursor.pos;
+    int start = buffer_seek_nonalphanumeric_left(app, buffer, pos) + 1;
+    int end = buffer_seek_nonalphanumeric_right(app, buffer, pos);
     return make_range(start, end);
 }
 
 static void enter_normal_mode(struct Application_Links *app, int buffer_id) {
-    unsigned int access = AccessAll;
-    Buffer_Summary buffer;
     if (state.mode == mode_visual || state.mode == mode_visual_line) {
         end_visual_selection(app);
     }
     state.action = vimaction_none;
     end_chord_bar(app);
-    buffer = get_buffer(app, buffer_id, access);
+    Buffer_Summary buffer = get_buffer(app, buffer_id, AccessAll);
     buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_normal);
     if (state.mode != mode_normal) {
         state.mode = mode_normal;
@@ -863,7 +859,7 @@ CUSTOM_COMMAND_SIG(move_forward_word_start){
     
     int pos2 = buffer_seek_next_word(app, &buffer, pos1);
 
-    view_set_cursor(app, &view, seek_pos(pos2), false);
+    view_set_cursor(app, &view, seek_pos(pos2), true);
     vim_exec_action(app, make_range(pos1, pos2), false);
 }
 
@@ -1037,7 +1033,7 @@ CUSTOM_COMMAND_SIG(yank_line){
     move_line_exec_action(app);
 }
 
-template <bool seek_forward, bool include_found>
+template <Search_Direction seek_forward, bool include_found>
 CUSTOM_COMMAND_SIG(seek_for_character){
     Buffer_Summary buffer;
     View_Summary view;
@@ -1059,12 +1055,9 @@ CUSTOM_COMMAND_SIG(seek_for_character){
     }
     move_left(app);
     if (!include_found) { 
-        pos2 += (seek_forward ? -1 : 1);
+        pos2 += seek_forward;
     }
-    Buffer_Seek seek;
-    seek.type = buffer_seek_pos;
-    seek.pos = pos2;
-    view_set_cursor(app, &view, seek, 1);
+    view_set_cursor(app, &view, seek_pos(pos2), true);
     
     if (pos2 >= 0) {
         vim_exec_action(app, make_range(pos1, pos2));
@@ -1075,10 +1068,10 @@ CUSTOM_COMMAND_SIG(seek_for_character){
     }
 }
 
-#define vim_seek_find_character seek_for_character<true, true>
-#define vim_seek_til_character seek_for_character<true, false>
-#define vim_seek_rfind_character seek_for_character<false, true>
-#define vim_seek_rtil_character seek_for_character<false, false>
+#define vim_seek_find_character seek_for_character<search_forward, true>
+#define vim_seek_til_character seek_for_character<search_forward, false>
+#define vim_seek_rfind_character seek_for_character<search_backward, true>
+#define vim_seek_rtil_character seek_for_character<search_backward, false>
 
 //TODO(chronister): move_up and move_down both operate on lines, which is not reflected here.
 CUSTOM_COMMAND_SIG(vim_move_up){
@@ -1255,7 +1248,7 @@ CUSTOM_COMMAND_SIG(focus_window_up) {
     set_active_view(app, &best);
 }
 
-CUSTOM_COMMAND_SIG(close_window){
+CUSTOM_COMMAND_SIG(close_window) {
     set_current_keymap(app, mapid_normal);
     end_chord_bar(app);
 
@@ -1265,15 +1258,14 @@ CUSTOM_COMMAND_SIG(close_window){
     else close_panel(app);
 }
 
-CUSTOM_COMMAND_SIG(combine_with_next_line){
+CUSTOM_COMMAND_SIG(combine_with_next_line) {
     seek_end_of_line(app);
     delete_char(app);
 }
 
-CUSTOM_COMMAND_SIG(paste_before){ 
+CUSTOM_COMMAND_SIG(paste_before_cursor_char) {
     View_Summary view;
     Buffer_Summary buffer;
-    int pos1;
     
     unsigned int access = AccessOpen;
     view = get_active_view(app, access);
@@ -1281,20 +1273,25 @@ CUSTOM_COMMAND_SIG(paste_before){
 
     Vim_Register* reg = state.registers + state.paste_register;
     if (reg->is_line) {
-        seek_beginning_of_line(app);
-        refresh_view(app, &view);
+		// TODO(chr): Fix linewise operations (they were pretty broken even before
+		// the paste refactor
+      //seek_beginning_of_line(app);
+      //refresh_view(app, &view);
+      //move_left(app);
+      //seek_beginning_of_line(app);
+    } else {
+        int paste_pos = view.cursor.pos;
+        buffer_replace_range(app, &buffer, paste_pos, paste_pos,
+                             reg->text.str, reg->text.size);
+        view_set_cursor(app, &view, seek_pos(paste_pos + reg->text.size - 1),
+                        true);
     }
-    pos1 = view.cursor.pos;
-    buffer_replace_range(app, &buffer, pos1, pos1, reg->text.str, reg->text.size);
-    move_left(app);
-    seek_beginning_of_line(app);
     clear_register_selection();
 }
 
-CUSTOM_COMMAND_SIG(paste_after){
+CUSTOM_COMMAND_SIG(paste_after_cursor_char) {
     View_Summary view;
     Buffer_Summary buffer;
-    int pos1;
     
     unsigned int access = AccessOpen;
     view = get_active_view(app, access);
@@ -1302,14 +1299,20 @@ CUSTOM_COMMAND_SIG(paste_after){
 
     Vim_Register* reg = state.registers + state.paste_register;
     if (reg->is_line) {
-        seek_end_of_line(app);
-        move_right(app);
-        refresh_view(app, &view);
+		// TODO(chr): Fix linewise operations (they were pretty broken even before
+		// the paste refactor
+        //seek_end_of_line(app);
+        //move_right(app);
+        //refresh_view(app, &view);
+        //move_left(app);
+        //seek_beginning_of_line(app);
+    } else {
+        int paste_pos = view.cursor.pos + 1;
+        buffer_replace_range(app, &buffer, paste_pos, paste_pos,
+                             reg->text.str, reg->text.size);
+        view_set_cursor(app, &view, seek_pos(paste_pos + reg->text.size - 1),
+                        true);
     }
-    pos1 = view.cursor.pos;
-    buffer_replace_range(app, &buffer, pos1, pos1, reg->text.str, reg->text.size);
-    move_left(app);
-    seek_beginning_of_line(app);
     clear_register_selection();
 }
 
@@ -1333,6 +1336,18 @@ CUSTOM_COMMAND_SIG(visual_yank) {
 
 CUSTOM_COMMAND_SIG(visual_format) {
     state.action = vimaction_format_range;
+    vim_exec_action(app, state.selection_range);
+    enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
+}
+
+CUSTOM_COMMAND_SIG(visual_indent_right) {
+    state.action = vimaction_format_range; // TODO(chr)
+    vim_exec_action(app, state.selection_range);
+    enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
+}
+
+CUSTOM_COMMAND_SIG(visual_indent_left) {
+    state.action = vimaction_format_range; // TODO(chr)
     vim_exec_action(app, state.selection_range);
     enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
@@ -1438,7 +1453,7 @@ CUSTOM_COMMAND_SIG(vim_delete_char) {
         if (0 < buffer.size && pos < buffer.size){
             buffer_replace_range(app, &buffer,
                                       pos, pos+1, 0, 0);
-            //TODO(chronister): Going into register
+            // TODO(chr): Going into register?
         }
     }
 }
@@ -1574,11 +1589,7 @@ void define_command(String command, Vim_Command_Func func) {
 }
 
 VIM_COMMAND_FUNC_SIG(write_file) {
-
-    View_Summary view;
-
-    unsigned int access = AccessProtected;
-    view = get_active_view(app, access);
+    View_Summary view = get_active_view(app, AccessProtected);
     Buffer_Summary buffer = get_buffer(app, view.buffer_id, access);
     if (argstr.str == NULL || argstr.size == 0) {
         save_buffer(app, &buffer, buffer.file_name, buffer.file_name_len, 0);
@@ -1646,11 +1657,17 @@ VIM_COMMAND_FUNC_SIG(write_file_and_close_view) {
 }
 
 VIM_COMMAND_FUNC_SIG(vertical_split) {
-    open_panel_vsplit(app);
+    View_Summary view = get_active_view(app, AccessAll);
+    View_Summary new_view = open_view(app, &view, ViewSplit_Right);
+    view_set_buffer(app, &new_view, view.buffer_id, 0);
+    set_active_view(app, &view);
 }
 
 VIM_COMMAND_FUNC_SIG(horizontal_split) {
-    open_panel_hsplit(app);
+    View_Summary view = get_active_view(app, AccessAll);
+    View_Summary new_view = open_view(app, &view, ViewSplit_Right);
+    view_set_buffer(app, &new_view, view.buffer_id, 0);
+    set_active_view(app, &view);
 }
 
 VIM_COMMAND_FUNC_SIG(exec_regex) {
@@ -1982,14 +1999,14 @@ void vim_get_bindings(Bind_Helper* context) {
 
     bind(context, 'J', MDFR_NONE, combine_with_next_line);
 
-    //TODO(chronister): Hitting top/bottom of file if near them
+    // TODO(chr): Hitting top/bottom of file if near them
     bind(context, 'u', MDFR_CTRL, page_up);
     bind(context, 'd', MDFR_CTRL, page_down);
 
-    //TODO (chronister): this doesn't go into register like you want
+    // TODO(chr): this doesn't go into register like you want
     bind(context, 'x', MDFR_NONE, vim_delete_char);
-    bind(context, 'P', MDFR_NONE, paste_before);
-    bind(context, 'p', MDFR_NONE, paste_after);
+    bind(context, 'P', MDFR_NONE, paste_before_cursor_char);
+    bind(context, 'p', MDFR_NONE, paste_after_cursor_char);
 
     bind(context, 'u', MDFR_NONE, cmdid_undo);
     bind(context, 'r', MDFR_CTRL, cmdid_redo);
@@ -2004,7 +2021,7 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, 'v', MDFR_NONE, enter_visual_mode);
     bind(context, 'V', MDFR_NONE, enter_visual_line_mode);
 
-    //TODO(chronister): Proper alphabetic marks
+    // TODO(chr): Proper alphabetic marks
     bind(context, 'm', MDFR_NONE, set_mark);
     bind(context, '`', MDFR_NONE, cursor_mark_swap);
 
@@ -2040,6 +2057,8 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, 'c', MDFR_NONE, visual_change);
     bind(context, 'y', MDFR_NONE, visual_yank);
     bind(context, '=', MDFR_NONE, visual_format);
+    bind(context, '>', MDFR_NONE, visual_indent_right);
+    bind(context, '<', MDFR_NONE, visual_indent_left);
     end_map(context);
 
     // Insert mode
