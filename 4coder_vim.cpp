@@ -1273,12 +1273,12 @@ CUSTOM_COMMAND_SIG(paste_before_cursor_char) {
 
     Vim_Register* reg = state.registers + state.paste_register;
     if (reg->is_line) {
-		// TODO(chr): Fix linewise operations (they were pretty broken even before
-		// the paste refactor
-      //seek_beginning_of_line(app);
-      //refresh_view(app, &view);
-      //move_left(app);
-      //seek_beginning_of_line(app);
+        seek_beginning_of_line(app);
+        refresh_view(app, &view);
+		int paste_pos = view.cursor.pos;
+        buffer_replace_range(app, &buffer, paste_pos, paste_pos,
+                             reg->text.str, reg->text.size);
+        view_set_cursor(app, &view, seek_pos(paste_pos), true);
     } else {
         int paste_pos = view.cursor.pos;
         buffer_replace_range(app, &buffer, paste_pos, paste_pos,
@@ -1299,13 +1299,13 @@ CUSTOM_COMMAND_SIG(paste_after_cursor_char) {
 
     Vim_Register* reg = state.registers + state.paste_register;
     if (reg->is_line) {
-		// TODO(chr): Fix linewise operations (they were pretty broken even before
-		// the paste refactor
-        //seek_end_of_line(app);
-        //move_right(app);
-        //refresh_view(app, &view);
-        //move_left(app);
-        //seek_beginning_of_line(app);
+		seek_end_of_line(app);
+		move_right(app);
+		refresh_view(app, &view);
+		int paste_pos = view.cursor.pos;
+        buffer_replace_range(app, &buffer, paste_pos, paste_pos,
+                             reg->text.str, reg->text.size);
+        view_set_cursor(app, &view, seek_pos(paste_pos), true);
     } else {
         int paste_pos = view.cursor.pos + 1;
         buffer_replace_range(app, &buffer, paste_pos, paste_pos,
@@ -1318,37 +1318,37 @@ CUSTOM_COMMAND_SIG(paste_after_cursor_char) {
 
 CUSTOM_COMMAND_SIG(visual_delete) {
     state.action = vimaction_delete_range;
-    vim_exec_action(app, state.selection_range);
+    vim_exec_action(app, state.selection_range, state.mode == mode_visual_line);
     enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
 CUSTOM_COMMAND_SIG(visual_change) {
     state.action = vimaction_change_range;
-    vim_exec_action(app, state.selection_range);
+    vim_exec_action(app, state.selection_range, state.mode == mode_visual_line);
     enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
 CUSTOM_COMMAND_SIG(visual_yank) {
     state.action = vimaction_yank_range;
-    vim_exec_action(app, state.selection_range);
+    vim_exec_action(app, state.selection_range, state.mode == mode_visual_line);
     enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
 CUSTOM_COMMAND_SIG(visual_format) {
     state.action = vimaction_format_range;
-    vim_exec_action(app, state.selection_range);
+    vim_exec_action(app, state.selection_range, state.mode == mode_visual_line);
     enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
 CUSTOM_COMMAND_SIG(visual_indent_right) {
     state.action = vimaction_format_range; // TODO(chr)
-    vim_exec_action(app, state.selection_range);
+    vim_exec_action(app, state.selection_range, state.mode == mode_visual_line);
     enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
 CUSTOM_COMMAND_SIG(visual_indent_left) {
     state.action = vimaction_format_range; // TODO(chr)
-    vim_exec_action(app, state.selection_range);
+    vim_exec_action(app, state.selection_range, state.mode == mode_visual_line);
     enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
@@ -1590,7 +1590,7 @@ void define_command(String command, Vim_Command_Func func) {
 
 VIM_COMMAND_FUNC_SIG(write_file) {
     View_Summary view = get_active_view(app, AccessProtected);
-    Buffer_Summary buffer = get_buffer(app, view.buffer_id, access);
+    Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessProtected);
     if (argstr.str == NULL || argstr.size == 0) {
         save_buffer(app, &buffer, buffer.file_name, buffer.file_name_len, 0);
     } else {
