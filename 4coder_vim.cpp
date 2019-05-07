@@ -34,6 +34,17 @@ void on_enter_visual_mode(struct Application_Links* app);
 // If you have questions or feature requests, feel free to reach out in the
 // GitHub issues at https://github.com/chr-1x/4vim.
 //
+// Personal TODOs:
+//  - Handle open editor with files properly
+//  - Handle system clipboard specially
+//  - 's' (delete contents of line and go to insert mode at appropriate indentation)
+//  - Range reformatting (gq)
+//     - v1: comment wrapping
+//  - Autocomment on new line
+//  - Support some basic vim variables via set
+//  - Visual block mode
+//  - Code folding?
+//
 //=============================================================================
 
 #include <assert.h>
@@ -210,7 +221,8 @@ static int defined_command_count = 0;
 // Some miscellaneous helper structs and functions.
 //=============================================================================
 
-// Defer: Run some code when the scope exits, regardless of how it exited.                                                               @defer
+// Defer:                                                               @defer
+// Run some code when the scope exits, regardless of how it exited.
 // Wah wah C++. Why can't I use a lambda without including this massive header?
 #include <functional>
 
@@ -228,6 +240,7 @@ struct _Defer {
          view.exists;                                                         \
          get_view_next(app, &view, AccessAll))
 
+// Linux specific magic to deal with ~ expansion
 #if defined(IS_LINUX)
 #include <pwd.h>
 #include <unistd.h>
@@ -315,6 +328,9 @@ static void copy_into_register(struct Application_Links* app,
     free(target_register->text.str);
     target_register->text = make_string((char*)malloc(range.end - range.start), range.end - range.start);
     buffer_read_range(app, buffer, range.start, range.end, target_register->text.str);
+    if (target_register == &state.registers[reg_system_clipboard]) {
+        clipboard_post(app, 0, target_register->text.str, target_register->text.size);
+    }
 }
 
 static void buffer_search(struct Application_Links* app, String word,
@@ -355,9 +371,7 @@ static bool active_view_to_line(struct Application_Links* app, int line) {
     if (!view_set_cursor(app, &view, seek_line_char(line, 0), false)) {
         return false;
     }
-    GUI_Scroll_Vars scroll = view.scroll_vars;
-    scroll.target_y = line;
-    return view_set_scroll(app, &view, scroll);
+    return true;
 }
 
 static int get_current_view_buffer_id(struct Application_Links* app,
@@ -729,26 +743,33 @@ static void buffer_query_search(struct Application_Links* app,
     buffer_search(app, bar.string, view, direction);
 }
 
+void reset_keymap_for_current_mode(struct Application_Links* app) {
+    switch (state.mode) {
+        case mode_normal: {
+            set_current_keymap(app, mapid_normal);
+        } break;
+
+        case mode_insert: {
+            set_current_keymap(app, mapid_insert);
+        } break;
+
+        case mode_replace: {
+            set_current_keymap(app, mapid_replace);
+        } break;
+
+        case mode_visual_line:
+        case mode_visual: {
+            set_current_keymap(app, mapid_visual);
+        } break;
+    }
+}
+
 }  // namespace
 
 //=============================================================================
 // > Custom commands <                                                @commands
 // Commands that do things.
 //=============================================================================
-
-CUSTOM_COMMAND_SIG(enter_normal_mode_with_register) {
-    if (state.mode == mode_visual ||
-        state.mode == mode_visual_line) {
-        end_visual_selection(app);
-    }
-
-    state.action = vimaction_none;
-    state.mode = mode_normal;
-
-    set_current_keymap(app, mapid_normal);
-
-    on_enter_normal_mode(app);
-}
 
 CUSTOM_COMMAND_SIG(enter_normal_mode_on_current) {
     enter_normal_mode(app, get_current_view_buffer_id(app, AccessAll));
@@ -846,6 +867,7 @@ CUSTOM_COMMAND_SIG(compound_move_command){
 #define vim_move_to_top compound_move_command<seek_top_of_file>
 #define vim_move_to_bottom compound_move_command<seek_bottom_of_file>
 #define vim_move_click compound_move_command<click_set_cursor>
+#define vim_move_scroll compound_move_command<mouse_wheel_scroll>
 
 CUSTOM_COMMAND_SIG(move_forward_word_start){
     View_Summary view;
@@ -1275,7 +1297,7 @@ CUSTOM_COMMAND_SIG(paste_before_cursor_char) {
     if (reg->is_line) {
         seek_beginning_of_line(app);
         refresh_view(app, &view);
-		int paste_pos = view.cursor.pos;
+        int paste_pos = view.cursor.pos;
         buffer_replace_range(app, &buffer, paste_pos, paste_pos,
                              reg->text.str, reg->text.size);
         view_set_cursor(app, &view, seek_pos(paste_pos), true);
@@ -1299,10 +1321,10 @@ CUSTOM_COMMAND_SIG(paste_after_cursor_char) {
 
     Vim_Register* reg = state.registers + state.paste_register;
     if (reg->is_line) {
-		seek_end_of_line(app);
-		move_right(app);
-		refresh_view(app, &view);
-		int paste_pos = view.cursor.pos;
+        seek_end_of_line(app);
+        move_right(app);
+        refresh_view(app, &view);
+        int paste_pos = view.cursor.pos;
         buffer_replace_range(app, &buffer, paste_pos, paste_pos,
                              reg->text.str, reg->text.size);
         view_set_cursor(app, &view, seek_pos(paste_pos), true);
@@ -1365,7 +1387,7 @@ CUSTOM_COMMAND_SIG(select_register) {
     char str[2] = { (char)trigger.key.character, '\0' };
     push_to_chord_bar(app, lit(str));
 
-    enter_normal_mode_with_register(app);
+    reset_keymap_for_current_mode(app);
 }
 
 CUSTOM_COMMAND_SIG(vim_open_file_in_quotes){
@@ -1955,6 +1977,8 @@ void vim_get_bindings(Bind_Helper* context) {
     bind_vanilla_keys(context, cmdid_null);
 
     bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
+    bind(context, key_esc, MDFR_CTRL, enter_normal_mode_on_current);
+    bind(context, key_esc, MDFR_SHIFT, enter_normal_mode_on_current);
 
     bind(context, 'h', MDFR_NONE, vim_move_left);
     bind(context, 'j', MDFR_NONE, vim_move_down);
@@ -1985,6 +2009,7 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, 'N', MDFR_NONE, vim_search_prev);
 
     bind(context, key_mouse_left, MDFR_NONE, vim_move_click);
+    bind(context, key_mouse_wheel, MDFR_NONE, vim_move_scroll);
 
     // Include status command thingy here so that you can do commands in any non-inserty mode
     bind(context, ':', MDFR_NONE, status_command);
@@ -2052,6 +2077,7 @@ void vim_get_bindings(Bind_Helper* context) {
     inherit_map(context, mapid_movements);
     bind(context, 'u', MDFR_CTRL, page_up);
     bind(context, 'd', MDFR_CTRL, page_down);
+    bind(context, '"', MDFR_NONE, enter_chord_switch_registers);
     bind(context, 'd', MDFR_NONE, visual_delete);
     bind(context, 'x', MDFR_NONE, visual_delete);
     bind(context, 'c', MDFR_NONE, visual_change);
@@ -2201,9 +2227,11 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, 'l', MDFR_NONE, focus_window_right);
     bind(context, 'l', MDFR_CTRL, focus_window_right);
     bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
-
     end_map(context);
 
+    // Lister UI bindings
+    // Have to improvise here because vim had no such thing and it's really weird
+    // if you can't just type into it (ironically enough...)
     begin_map(context, default_lister_ui_map);
     bind_vanilla_keys(context, lister__write_character);
     bind(context, key_esc, MDFR_NONE, lister__quit);
