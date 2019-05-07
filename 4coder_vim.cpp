@@ -35,10 +35,10 @@ void on_enter_visual_mode(struct Application_Links* app);
 // GitHub issues at https://github.com/chr-1x/4vim.
 //
 // Personal TODOs:
+//  - yy puts the cursor at end of line
 //  - Handle open editor with files properly
-//  - Handle system clipboard specially
-//  - 's' (delete contents of line and go to insert mode at appropriate indentation)
-//  - Range reformatting (gq)
+//  - s (delete contents of line and go to insert mode at appropriate indentation)
+//  - Range reformatting gq
 //     - v1: comment wrapping
 //  - Autocomment on new line
 //  - Support some basic vim variables via set
@@ -331,6 +331,19 @@ static void copy_into_register(struct Application_Links* app,
     if (target_register == &state.registers[reg_system_clipboard]) {
         clipboard_post(app, 0, target_register->text.str, target_register->text.size);
     }
+}
+
+static void paste_from_register(struct Application_Links* app,
+							    Buffer_Summary* buffer, int paste_pos,
+								Vim_Register* reg) {
+	if (reg == &state.registers[reg_system_clipboard]) {
+		free(reg->text.str);
+		int clipboard_text_size = clipboard_index(app, 0, 0, NULL, 0);
+		reg->text = make_string((char*)malloc(clipboard_text_size), clipboard_text_size);
+		clipboard_index(app, 0, 0, reg->text.str, reg->text.size);
+	}
+    buffer_replace_range(app, buffer, paste_pos, paste_pos,
+                         reg->text.str, reg->text.size);
 }
 
 static void buffer_search(struct Application_Links* app, String word,
@@ -1298,13 +1311,11 @@ CUSTOM_COMMAND_SIG(paste_before_cursor_char) {
         seek_beginning_of_line(app);
         refresh_view(app, &view);
         int paste_pos = view.cursor.pos;
-        buffer_replace_range(app, &buffer, paste_pos, paste_pos,
-                             reg->text.str, reg->text.size);
+		paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos), true);
     } else {
         int paste_pos = view.cursor.pos;
-        buffer_replace_range(app, &buffer, paste_pos, paste_pos,
-                             reg->text.str, reg->text.size);
+		paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos + reg->text.size - 1),
                         true);
     }
@@ -1325,13 +1336,11 @@ CUSTOM_COMMAND_SIG(paste_after_cursor_char) {
         move_right(app);
         refresh_view(app, &view);
         int paste_pos = view.cursor.pos;
-        buffer_replace_range(app, &buffer, paste_pos, paste_pos,
-                             reg->text.str, reg->text.size);
+		paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos), true);
     } else {
         int paste_pos = view.cursor.pos + 1;
-        buffer_replace_range(app, &buffer, paste_pos, paste_pos,
-                             reg->text.str, reg->text.size);
+		paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos + reg->text.size - 1),
                         true);
     }
@@ -2099,6 +2108,9 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, 'n', MDFR_CTRL, word_complete);
 
     bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
+    bind(context, key_esc, MDFR_SHIFT, enter_normal_mode_on_current);
+    bind(context, key_esc, MDFR_CTRL, enter_normal_mode_on_current);
+    bind(context, key_esc, MDFR_ALT, enter_normal_mode_on_current);
 
     end_map(context);
 
