@@ -38,9 +38,11 @@ void on_enter_visual_mode(struct Application_Links* app);
 //  - Freshly opened files aren't in normal mode?
 //  - * search should delimit with word boundaries
 //  - dw at end of line shouldn't delete newline
-//  - s (delete contents of line and go to insert mode at appropriate indentation)
+//  - s (equivalent to cl)
+//  - S (delete contents of line and go to insert mode at appropriate indentation)
+//    - equivalent to cc
 //  - Range reformatting gq
-//     - v1: comment wrapping
+//    - v1: comment wrapping
 //  - Autocomment on new line
 //  - Support some basic vim variables via set
 //  - Visual block mode
@@ -170,10 +172,14 @@ struct Vim_State {
     //  - 10 numbers
     int marks[36];
 
+	// The *current* vim mode. If a chord or action is pending, this will dictate
+    // what mode you return to once the action is completed.
     Vim_Mode mode;
-    int cursor;
-
+	// A pending action. Used to keep track of intended edits while in the middle
+	// of chords.
     Pending_Action action;
+    // The current register. Union for convenience (and to make it clear that
+	// only one of these things can be happening at once).
     union {
         Register_Id action_register;
         Register_Id yank_register;
@@ -395,35 +401,24 @@ static int get_current_view_buffer_id(struct Application_Links* app,
 }
 
 static void set_current_keymap(struct Application_Links* app, int map) {
-    unsigned int access = AccessAll;
-    View_Summary view = get_active_view(app, access);
-    Buffer_Summary buffer = get_buffer(app, view.buffer_id, access);
-
+    View_Summary view = get_active_view(app, AccessAll);
+    Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessAll);
     if (!buffer.exists) { return; }
-
     buffer_set_setting(app, &buffer, BufferSetting_MapID, map);
 }
 
 static char get_cursor_char(struct Application_Links* app, int offset) {
-    Buffer_Summary buffer;
-    View_Summary view;
-    
-    unsigned int access = AccessOpen;
-    view = get_active_view(app, access);
-    buffer = get_buffer(app, view.buffer_id, access);
-    
-    int res;
+    View_Summary view = get_active_view(app, AccessOpen);
+    Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessOpen);
     char read; 
-    res = buffer_read_range(app, &buffer, view.cursor.pos + offset, view.cursor.pos + offset + 1, &read);
+    int res = buffer_read_range(app, &buffer, view.cursor.pos + offset,
+								view.cursor.pos + offset + 1, &read);
     if (res) { return read; }
     else { return 0; }
 }
 
 static int get_cursor_pos(struct Application_Links* app) {
-    View_Summary view;
-    
-    unsigned int access = AccessAll;
-    view = get_active_view(app, access);
+    View_Summary view = get_active_view(app, AccessAll);
     return view.cursor.pos;
 }
 
@@ -526,12 +521,8 @@ static void clear_register_selection() {
 
 static void vim_exec_action(struct Application_Links* app, Range range,
                             bool is_line) {
-    Buffer_Summary buffer;
-    View_Summary view;
-    
-    unsigned int access = AccessAll;
-    view = get_active_view(app, access);
-    buffer = get_buffer(app, view.buffer_id, access);
+    View_Summary view = get_active_view(app, AccessAll);
+    Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessAll);
 
     switch (state.action) {
         case vimaction_delete_range: 
@@ -858,18 +849,12 @@ CUSTOM_COMMAND_SIG(seek_bottom_of_file) {
 
 template <CUSTOM_COMMAND_SIG(command)>
 CUSTOM_COMMAND_SIG(compound_move_command){
-    View_Summary view;
-    int pos1, pos2;
-    
-    unsigned int access = AccessProtected;
-    view = get_active_view(app, access);
-    
-    pos1 = view.cursor.pos;
+    View_Summary view = get_active_view(app, AccessProtected);
+    int before_pos = view.cursor.pos;
     command(app);
     refresh_view(app, &view);
-    pos2 = view.cursor.pos;
-    
-    vim_exec_action(app, make_range(pos1, pos2), false);
+    int after_pos = view.cursor.pos;
+    vim_exec_action(app, make_range(before_pos, after_pos), false);
 }
 
 #define vim_move_left compound_move_command<move_left>
@@ -2190,6 +2175,7 @@ void vim_get_bindings(Bind_Helper* context) {
     begin_map(context, mapid_chord_delete);
     inherit_map(context, mapid_movements);
     bind(context, 'd', MDFR_NONE, move_line_exec_action);
+    bind(context, 'c', MDFR_NONE, move_line_exec_action);
     end_map(context);
 
     // yank+movement chords
