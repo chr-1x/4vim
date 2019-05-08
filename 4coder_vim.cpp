@@ -35,7 +35,9 @@ void on_enter_visual_mode(struct Application_Links* app);
 // GitHub issues at https://github.com/chr-1x/4vim.
 //
 // Personal TODOs:
-//  - Handle open editor with files properly
+//  - Freshly opened files aren't in normal mode?
+//  - * search should delimit with word boundaries
+//  - dw at end of line shouldn't delete newline
 //  - s (delete contents of line and go to insert mode at appropriate indentation)
 //  - Range reformatting gq
 //     - v1: comment wrapping
@@ -1724,6 +1726,21 @@ VIM_COMMAND_FUNC_SIG(change_directory) {
 // CALL ME
 // This function should be called from your 4coder custom init hook
 START_HOOK_SIG(vim_hook_init_func) {
+	// First file replaces scratch buffer
+	if (file_count > 0) {
+        View_Summary view = get_active_view(app, AccessAll);
+        Buffer_Summary buffer = create_buffer(app, files[0], strlen(files[0]), 0);
+        if (buffer.exists){
+            view_set_buffer(app, &view, buffer.buffer_id, 0);
+        }
+	}
+	// Rest of files open in splits
+	// TODO(chr): Emulate vim behavior here? IIRC vim will queue them up and
+	// edit them one by one.
+	for (int file_index = 1; file_index < file_count; ++file_index) {
+		new_file(app, lit("new"), make_string(files[file_index],
+				 strlen(files[file_index])), true);
+	}
     return 0;
 }
 
