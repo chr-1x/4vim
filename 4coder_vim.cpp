@@ -35,7 +35,6 @@ void on_enter_visual_mode(struct Application_Links* app);
 // GitHub issues at https://github.com/chr-1x/4vim.
 //
 // Personal TODOs:
-//  - yy puts the cursor at end of line
 //  - Handle open editor with files properly
 //  - s (delete contents of line and go to insert mode at appropriate indentation)
 //  - Range reformatting gq
@@ -1041,21 +1040,16 @@ CUSTOM_COMMAND_SIG(enter_chord_g){
 }
 
 CUSTOM_COMMAND_SIG(move_line_exec_action){
-    View_Summary view;
-    int pos1, pos2;
-    
-    unsigned int access = AccessProtected;
-    view = get_active_view(app, access);
-
+    View_Summary view = get_active_view(app, AccessProtected);
+	int initial = view.cursor.pos;
     seek_beginning_of_line(app);
     refresh_view(app, &view);
-    pos1 = view.cursor.pos;
-
+    int line_begin = view.cursor.pos;
     seek_end_of_line(app);
     refresh_view(app, &view);
-    pos2 = view.cursor.pos + 1;
-    
-    vim_exec_action(app, make_range(pos1, pos2), true);
+    int line_end = view.cursor.pos + 1;
+    vim_exec_action(app, make_range(line_begin, line_end), true);
+    view_set_cursor(app, &view, seek_pos(initial), true);
 }
 
 CUSTOM_COMMAND_SIG(vim_delete_line){
