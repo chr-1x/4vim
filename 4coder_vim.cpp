@@ -172,14 +172,14 @@ struct Vim_State {
     //  - 10 numbers
     int marks[36];
 
-	// The *current* vim mode. If a chord or action is pending, this will dictate
+    // The *current* vim mode. If a chord or action is pending, this will dictate
     // what mode you return to once the action is completed.
     Vim_Mode mode;
-	// A pending action. Used to keep track of intended edits while in the middle
-	// of chords.
+    // A pending action. Used to keep track of intended edits while in the middle
+    // of chords.
     Pending_Action action;
     // The current register. Union for convenience (and to make it clear that
-	// only one of these things can be happening at once).
+    // only one of these things can be happening at once).
     union {
         Register_Id action_register;
         Register_Id yank_register;
@@ -341,14 +341,14 @@ static void copy_into_register(struct Application_Links* app,
 }
 
 static void paste_from_register(struct Application_Links* app,
-							    Buffer_Summary* buffer, int paste_pos,
-								Vim_Register* reg) {
-	if (reg == &state.registers[reg_system_clipboard]) {
-		free(reg->text.str);
-		int clipboard_text_size = clipboard_index(app, 0, 0, NULL, 0);
-		reg->text = make_string((char*)malloc(clipboard_text_size), clipboard_text_size);
-		clipboard_index(app, 0, 0, reg->text.str, reg->text.size);
-	}
+                                Buffer_Summary* buffer, int paste_pos,
+                                Vim_Register* reg) {
+    if (reg == &state.registers[reg_system_clipboard]) {
+        free(reg->text.str);
+        int clipboard_text_size = clipboard_index(app, 0, 0, NULL, 0);
+        reg->text = make_string((char*)malloc(clipboard_text_size), clipboard_text_size);
+        clipboard_index(app, 0, 0, reg->text.str, reg->text.size);
+    }
     buffer_replace_range(app, buffer, paste_pos, paste_pos,
                          reg->text.str, reg->text.size);
 }
@@ -412,7 +412,7 @@ static char get_cursor_char(struct Application_Links* app, int offset) {
     Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessOpen);
     char read; 
     int res = buffer_read_range(app, &buffer, view.cursor.pos + offset,
-								view.cursor.pos + offset + 1, &read);
+                                view.cursor.pos + offset + 1, &read);
     if (res) { return read; }
     else { return 0; }
 }
@@ -697,6 +697,9 @@ static Range get_word_under_cursor(struct Application_Links* app,
 }
 
 static void enter_normal_mode(struct Application_Links *app, int buffer_id) {
+    if (state.mode == mode_insert || state.mode == mode_replace) {
+        move_left(app);   
+    }
     if (state.mode == mode_visual || state.mode == mode_visual_line) {
         end_visual_selection(app);
     }
@@ -1028,7 +1031,7 @@ CUSTOM_COMMAND_SIG(enter_chord_g){
 
 CUSTOM_COMMAND_SIG(move_line_exec_action){
     View_Summary view = get_active_view(app, AccessProtected);
-	int initial = view.cursor.pos;
+    int initial = view.cursor.pos;
     seek_beginning_of_line(app);
     refresh_view(app, &view);
     int line_begin = view.cursor.pos;
@@ -1292,11 +1295,11 @@ CUSTOM_COMMAND_SIG(paste_before_cursor_char) {
         seek_beginning_of_line(app);
         refresh_view(app, &view);
         int paste_pos = view.cursor.pos;
-		paste_from_register(app, &buffer, paste_pos, reg); 
+        paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos), true);
     } else {
         int paste_pos = view.cursor.pos;
-		paste_from_register(app, &buffer, paste_pos, reg); 
+        paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos + reg->text.size - 1),
                         true);
     }
@@ -1317,11 +1320,11 @@ CUSTOM_COMMAND_SIG(paste_after_cursor_char) {
         move_right(app);
         refresh_view(app, &view);
         int paste_pos = view.cursor.pos;
-		paste_from_register(app, &buffer, paste_pos, reg); 
+        paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos), true);
     } else {
         int paste_pos = view.cursor.pos + 1;
-		paste_from_register(app, &buffer, paste_pos, reg); 
+        paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos + reg->text.size - 1),
                         true);
     }
@@ -1711,21 +1714,21 @@ VIM_COMMAND_FUNC_SIG(change_directory) {
 // CALL ME
 // This function should be called from your 4coder custom init hook
 START_HOOK_SIG(vim_hook_init_func) {
-	// First file replaces scratch buffer
-	if (file_count > 0) {
+    // First file replaces scratch buffer
+    if (file_count > 0) {
         View_Summary view = get_active_view(app, AccessAll);
-        Buffer_Summary buffer = create_buffer(app, files[0], strlen(files[0]), 0);
+        Buffer_Summary buffer = create_buffer(app, files[0], (int32_t)strlen(files[0]), 0);
         if (buffer.exists){
             view_set_buffer(app, &view, buffer.buffer_id, 0);
         }
-	}
-	// Rest of files open in splits
-	// TODO(chr): Emulate vim behavior here? IIRC vim will queue them up and
-	// edit them one by one.
-	for (int file_index = 1; file_index < file_count; ++file_index) {
-		new_file(app, lit("new"), make_string(files[file_index],
-				 strlen(files[file_index])), true);
-	}
+    }
+    // Rest of files open in splits
+    // TODO(chr): Emulate vim behavior here? IIRC vim will queue them up and
+    // edit them one by one.
+    for (int file_index = 1; file_index < file_count; ++file_index) {
+        new_file(app, lit("new"), make_string(files[file_index],
+                                              (i32_4tech)strlen(files[file_index])), true);
+    }
     return 0;
 }
 
