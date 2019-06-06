@@ -1735,8 +1735,8 @@ START_HOOK_SIG(vim_hook_init_func) {
 // CALL ME
 // This function should be called from your 4coder custom open file hook
 OPEN_FILE_HOOK_SIG(vim_hook_open_file_func) {
-    enter_normal_mode(app, buffer_id);
     default_file_settings(app, buffer_id);
+    enter_normal_mode(app, buffer_id);
     return 0;
 }
 
