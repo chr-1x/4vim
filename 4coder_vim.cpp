@@ -921,10 +921,55 @@ CUSTOM_COMMAND_SIG(move_forward_word_end){
     vim_exec_action(app, make_range(pos1, pos2));
 }
 
+// https://4coder.handmade.network/forums/t/6867-vim_style_comments
+void thorduragust_newline(Application_Links *app, bool below = true) {
+    int access = AccessOpen;
+    View_Summary view = get_active_view(app, access);
+    Buffer_Summary buffer = get_buffer(app, view.buffer_id, access);
+    
+    int start = buffer_get_line_start(app, &buffer, view.cursor.line);
+    int hard_start = get_start_of_line_at_cursor(app, &view, &buffer);
+    
+    String name = make_string(buffer.file_name, buffer.file_name_len);
+    String extension = file_extension(make_string(buffer.file_name, buffer.file_name_len));
+    
+    
+    bool file_is_c = (match(extension, "cpp") || match(extension, "h") || match(extension, "c") || match(extension, "hpp") || match(extension, "cc"));
+    bool file_is_c_like = (file_is_c || match(extension, "jai") || match(extension, "java") || match(extension, "cs") ||
+                           match(extension, "rs"));
+    
+    if (file_is_c_like && c_line_comment_starts_at_position(app, &buffer, hard_start)) {
+        Hard_Start_Result after_comment = buffer_find_hard_start(app, &buffer, hard_start + 2, DEF_TAB_WIDTH);
+        hard_start = after_comment.char_pos;
+    }
+    
+    Partition *scratch = &global_part;
+    Temp_Memory temp = begin_temp_memory(scratch);
+    
+    int size = hard_start - start;
+    char *str = push_array(scratch, char, size);
+    
+    if (str != 0) {
+        buffer_read_range(app, &buffer, start, hard_start, str);
+        String previous_line_continuation = make_string(str, hard_start - start);
+        if (below)   write_string(app, make_lit_string("\n"));
+        write_string(app, previous_line_continuation);
+        if (!below)   write_string(app, make_lit_string("\n"));
+    }
+    
+    end_temp_memory(temp);
+}
+
+CUSTOM_COMMAND_SIG(vim_newline) {
+    thorduragust_newline(app, true);
+    enter_insert_mode(app, get_current_view_buffer_id(app, AccessAll));
+}
+
 CUSTOM_COMMAND_SIG(newline_then_insert_before){
     seek_beginning_of_line(app);
-    write_string(app, make_lit_string("\n"));
-    move_left(app);
+    thorduragust_newline(app, false);
+    move_up(app);
+    seek_end_of_line(app);
     enter_insert_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
@@ -951,7 +996,7 @@ CUSTOM_COMMAND_SIG(seek_eol_then_insert){
 
 CUSTOM_COMMAND_SIG(newline_then_insert_after){
     seek_end_of_line(app);
-    write_string(app, make_lit_string("\n"));
+    thorduragust_newline(app, true);
     enter_insert_mode(app, get_current_view_buffer_id(app, AccessOpen));
 }
 
@@ -2106,6 +2151,8 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, key_back, MDFR_NONE, backspace_char);
     bind(context, 'n', MDFR_CTRL, word_complete);
 
+    bind(context, '\n', MDFR_NONE, vim_newline);
+
     bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
     bind(context, key_esc, MDFR_SHIFT, enter_normal_mode_on_current);
     bind(context, key_esc, MDFR_CTRL, enter_normal_mode_on_current);
@@ -2124,6 +2171,7 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, key_back, MDFR_NONE, backspace_char);
     bind(context, 'n', MDFR_CTRL, word_complete);
 
+    bind(context, '\n', MDFR_NONE, vim_newline);
     bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
 
     end_map(context);
