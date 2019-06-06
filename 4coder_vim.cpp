@@ -18,10 +18,36 @@
 //
 // 2. Define the following functions:
 //
-void on_enter_normal_mode(struct Application_Links* app);
-void on_enter_insert_mode(struct Application_Links* app);
-void on_enter_replace_mode(struct Application_Links* app);
-void on_enter_visual_mode(struct Application_Links* app);
+typedef void (*Enter_Mode_Hook_Function)(struct Application_Links *app);
+#define ENTER_MODE_HOOK_SIG(name) \
+void name(struct Application_Links *app)
+
+ENTER_MODE_HOOK_SIG(enter_mode_stub) {}
+
+struct Vim_Mode_Hooks {
+    union {
+        Enter_Mode_Hook_Function hook_functions[5];
+
+        struct {
+            Enter_Mode_Hook_Function on_enter_normal_mode;
+            Enter_Mode_Hook_Function on_enter_insert_mode;
+            Enter_Mode_Hook_Function on_enter_replace_mode;
+            Enter_Mode_Hook_Function on_enter_visual_mode;
+
+            Enter_Mode_Hook_Function on_enter_delete_chord;
+        };
+    };
+};
+
+// @todo use a hashtable with the mapid instead
+static Vim_Mode_Hooks vim_mode_hooks = {
+    enter_mode_stub,
+    enter_mode_stub,
+    enter_mode_stub,
+    enter_mode_stub,
+
+    enter_mode_stub
+};
 //
 //    The definitions may be empty, but they need to exist or the linker will
 //    complain. TODO(chr). They allow you to hook into vim binding behavior in
@@ -326,7 +352,7 @@ static void enter_insert_mode(struct Application_Links *app, int buffer_id) {
     buffer = get_buffer(app, buffer_id, access);
     buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_insert);
 
-    on_enter_insert_mode(app);
+    vim_mode_hooks.on_enter_insert_mode(app);
 }
 
 static void copy_into_register(struct Application_Links* app,
@@ -709,7 +735,7 @@ static void enter_normal_mode(struct Application_Links *app, int buffer_id) {
     buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_normal);
     if (state.mode != mode_normal) {
         state.mode = mode_normal;
-        on_enter_normal_mode(app);
+        vim_mode_hooks.on_enter_normal_mode(app);
     }
 }
 
@@ -787,7 +813,7 @@ CUSTOM_COMMAND_SIG(enter_replace_mode){
     state.mode = mode_replace;
     set_current_keymap(app, mapid_replace);
     clear_register_selection();
-    on_enter_replace_mode(app);
+    vim_mode_hooks.on_enter_replace_mode(app);
 }
 
 CUSTOM_COMMAND_SIG(enter_visual_mode){
@@ -798,7 +824,7 @@ CUSTOM_COMMAND_SIG(enter_visual_mode){
 
     set_current_keymap(app, mapid_visual);
     clear_register_selection();
-    on_enter_visual_mode(app);
+    vim_mode_hooks.on_enter_visual_mode(app);
 }
 
 CUSTOM_COMMAND_SIG(enter_visual_line_mode){
@@ -809,7 +835,7 @@ CUSTOM_COMMAND_SIG(enter_visual_line_mode){
 
     set_current_keymap(app, mapid_visual);
     clear_register_selection();
-    on_enter_visual_mode(app);
+    vim_mode_hooks.on_enter_visual_mode(app);
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_replace_single){
@@ -1006,6 +1032,8 @@ CUSTOM_COMMAND_SIG(enter_chord_delete){
     state.action = vimaction_delete_range;
 
     push_to_chord_bar(app, lit("d"));
+
+    vim_mode_hooks.on_enter_delete_chord(app);
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_change){
