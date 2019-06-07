@@ -570,6 +570,7 @@ static void vim_exec_action(struct Application_Links* app, Range range,
             target_register->is_line = is_line;
 
             copy_into_register(app, &buffer, range, target_register);
+            clipboard_post(app, 0, target_register->text.str, target_register->text.size);
         } break;
 
         case vimaction_indent_left_range:  // TODO(chr)
