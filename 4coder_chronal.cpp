@@ -19,13 +19,14 @@ constexpr int_color color_margin_visual = 0xFF722b04;
 START_HOOK_SIG(chronal_init) {
     default_4coder_initialize(app);
     // NOTE(chr): Be sure to call the vim custom's hook!
-    return vim_hook_init_func(app, files, file_count, flags, flag_count);
+    vim_hook_init_func(app, files, file_count, flags, flag_count);
+    return(0);
 }
 
 // NOTE(chr): Define the four functions that the vim plugin wants in order
 // to determine what to do when modes change.
 // TODO(chr): 
-void on_enter_insert_mode(struct Application_Links *app) {
+ENTER_MODE_HOOK_SIG(on_enter_insert_mode) {
     Theme_Color colors[] = {
         { Stag_Bar_Active, color_margin_insert },
         { Stag_Margin_Active, color_margin_insert },
@@ -33,7 +34,7 @@ void on_enter_insert_mode(struct Application_Links *app) {
     set_theme_colors(app, colors, ArrayCount(colors));
 }
 
-void on_enter_replace_mode(struct Application_Links *app) {
+ENTER_MODE_HOOK_SIG(on_enter_replace_mode) {
     Theme_Color colors[] = {
         { Stag_Bar_Active, color_margin_replace },
         { Stag_Margin_Active, color_margin_replace },
@@ -41,7 +42,7 @@ void on_enter_replace_mode(struct Application_Links *app) {
     set_theme_colors(app, colors, ArrayCount(colors));
 }
 
-void on_enter_normal_mode(struct Application_Links *app) {
+ENTER_MODE_HOOK_SIG(on_enter_normal_mode) {
     Theme_Color colors[] = {
         { Stag_Bar_Active, color_margin_normal },
         { Stag_Margin_Active, color_margin_normal },
@@ -49,7 +50,7 @@ void on_enter_normal_mode(struct Application_Links *app) {
     set_theme_colors(app, colors, ArrayCount(colors));
 }
 
-void on_enter_visual_mode(struct Application_Links *app) {
+ENTER_MODE_HOOK_SIG(on_enter_visual_mode) {
     Theme_Color colors[] = {
         { Stag_Bar_Active, color_margin_visual },
         { Stag_Margin_Active, color_margin_visual },
@@ -58,11 +59,25 @@ void on_enter_visual_mode(struct Application_Links *app) {
 }
 
 void chronal_get_bindings(Bind_Helper *context) {
+    set_all_default_hooks(context);
+#if defined(__APPLE__) && defined(__MACH__)
+    mac_default_keys(context);
+#else
+    default_keys(context);
+#endif
+
     // Set the hooks
     set_start_hook(context, chronal_init);
     set_open_file_hook(context, vim_hook_open_file_func);
     set_new_file_hook(context, vim_hook_new_file_func);
     set_render_caller(context, vim_render_caller);
+
+    // vim mode hooks
+    vim_mode_hooks.on_enter_normal_mode  = on_enter_normal_mode;
+    vim_mode_hooks.on_enter_insert_mode  = on_enter_insert_mode;
+    vim_mode_hooks.on_enter_replace_mode = on_enter_replace_mode;
+    vim_mode_hooks.on_enter_visual_mode  = on_enter_visual_mode;
+    // vim_mode_hooks.on_enter_delete_chord = ;
 
     // Call to set the vim bindings
     vim_get_bindings(context);

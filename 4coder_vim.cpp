@@ -18,10 +18,36 @@
 //
 // 2. Define the following functions:
 //
-void on_enter_normal_mode(struct Application_Links* app);
-void on_enter_insert_mode(struct Application_Links* app);
-void on_enter_replace_mode(struct Application_Links* app);
-void on_enter_visual_mode(struct Application_Links* app);
+typedef void (*Enter_Mode_Hook_Function)(struct Application_Links *app);
+#define ENTER_MODE_HOOK_SIG(name) \
+void name(struct Application_Links *app)
+
+ENTER_MODE_HOOK_SIG(enter_mode_stub) {}
+
+struct Vim_Mode_Hooks {
+    union {
+        Enter_Mode_Hook_Function hook_functions[5];
+
+        struct {
+            Enter_Mode_Hook_Function on_enter_normal_mode;
+            Enter_Mode_Hook_Function on_enter_insert_mode;
+            Enter_Mode_Hook_Function on_enter_replace_mode;
+            Enter_Mode_Hook_Function on_enter_visual_mode;
+
+            Enter_Mode_Hook_Function on_enter_delete_chord;
+        };
+    };
+};
+
+// @todo use a hashtable with the mapid instead
+static Vim_Mode_Hooks vim_mode_hooks = {
+    enter_mode_stub,
+    enter_mode_stub,
+    enter_mode_stub,
+    enter_mode_stub,
+
+    enter_mode_stub
+};
 //
 //    The definitions may be empty, but they need to exist or the linker will
 //    complain. TODO(chr). They allow you to hook into vim binding behavior in
@@ -172,14 +198,14 @@ struct Vim_State {
     //  - 10 numbers
     int marks[36];
 
-	// The *current* vim mode. If a chord or action is pending, this will dictate
+    // The *current* vim mode. If a chord or action is pending, this will dictate
     // what mode you return to once the action is completed.
     Vim_Mode mode;
-	// A pending action. Used to keep track of intended edits while in the middle
-	// of chords.
+    // A pending action. Used to keep track of intended edits while in the middle
+    // of chords.
     Pending_Action action;
     // The current register. Union for convenience (and to make it clear that
-	// only one of these things can be happening at once).
+    // only one of these things can be happening at once).
     union {
         Register_Id action_register;
         Register_Id yank_register;
@@ -326,7 +352,7 @@ static void enter_insert_mode(struct Application_Links *app, int buffer_id) {
     buffer = get_buffer(app, buffer_id, access);
     buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_insert);
 
-    on_enter_insert_mode(app);
+    vim_mode_hooks.on_enter_insert_mode(app);
 }
 
 static void copy_into_register(struct Application_Links* app,
@@ -341,14 +367,14 @@ static void copy_into_register(struct Application_Links* app,
 }
 
 static void paste_from_register(struct Application_Links* app,
-							    Buffer_Summary* buffer, int paste_pos,
-								Vim_Register* reg) {
-	if (reg == &state.registers[reg_system_clipboard]) {
-		free(reg->text.str);
-		int clipboard_text_size = clipboard_index(app, 0, 0, NULL, 0);
-		reg->text = make_string((char*)malloc(clipboard_text_size), clipboard_text_size);
-		clipboard_index(app, 0, 0, reg->text.str, reg->text.size);
-	}
+                                Buffer_Summary* buffer, int paste_pos,
+                                Vim_Register* reg) {
+    if (reg == &state.registers[reg_system_clipboard]) {
+        free(reg->text.str);
+        int clipboard_text_size = clipboard_index(app, 0, 0, NULL, 0);
+        reg->text = make_string((char*)malloc(clipboard_text_size), clipboard_text_size);
+        clipboard_index(app, 0, 0, reg->text.str, reg->text.size);
+    }
     buffer_replace_range(app, buffer, paste_pos, paste_pos,
                          reg->text.str, reg->text.size);
 }
@@ -412,7 +438,7 @@ static char get_cursor_char(struct Application_Links* app, int offset) {
     Buffer_Summary buffer = get_buffer(app, view.buffer_id, AccessOpen);
     char read; 
     int res = buffer_read_range(app, &buffer, view.cursor.pos + offset,
-								view.cursor.pos + offset + 1, &read);
+                                view.cursor.pos + offset + 1, &read);
     if (res) { return read; }
     else { return 0; }
 }
@@ -544,6 +570,7 @@ static void vim_exec_action(struct Application_Links* app, Range range,
             target_register->is_line = is_line;
 
             copy_into_register(app, &buffer, range, target_register);
+            clipboard_post(app, 0, target_register->text.str, target_register->text.size);
         } break;
 
         case vimaction_indent_left_range:  // TODO(chr)
@@ -697,6 +724,9 @@ static Range get_word_under_cursor(struct Application_Links* app,
 }
 
 static void enter_normal_mode(struct Application_Links *app, int buffer_id) {
+    if (state.mode == mode_insert || state.mode == mode_replace) {
+        move_left(app);   
+    }
     if (state.mode == mode_visual || state.mode == mode_visual_line) {
         end_visual_selection(app);
     }
@@ -706,7 +736,7 @@ static void enter_normal_mode(struct Application_Links *app, int buffer_id) {
     buffer_set_setting(app, &buffer, BufferSetting_MapID, mapid_normal);
     if (state.mode != mode_normal) {
         state.mode = mode_normal;
-        on_enter_normal_mode(app);
+        vim_mode_hooks.on_enter_normal_mode(app);
     }
 }
 
@@ -784,7 +814,7 @@ CUSTOM_COMMAND_SIG(enter_replace_mode){
     state.mode = mode_replace;
     set_current_keymap(app, mapid_replace);
     clear_register_selection();
-    on_enter_replace_mode(app);
+    vim_mode_hooks.on_enter_replace_mode(app);
 }
 
 CUSTOM_COMMAND_SIG(enter_visual_mode){
@@ -795,7 +825,7 @@ CUSTOM_COMMAND_SIG(enter_visual_mode){
 
     set_current_keymap(app, mapid_visual);
     clear_register_selection();
-    on_enter_visual_mode(app);
+    vim_mode_hooks.on_enter_visual_mode(app);
 }
 
 CUSTOM_COMMAND_SIG(enter_visual_line_mode){
@@ -806,7 +836,7 @@ CUSTOM_COMMAND_SIG(enter_visual_line_mode){
 
     set_current_keymap(app, mapid_visual);
     clear_register_selection();
-    on_enter_visual_mode(app);
+    vim_mode_hooks.on_enter_visual_mode(app);
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_replace_single){
@@ -918,10 +948,55 @@ CUSTOM_COMMAND_SIG(move_forward_word_end){
     vim_exec_action(app, make_range(pos1, pos2));
 }
 
+// https://4coder.handmade.network/forums/t/6867-vim_style_comments
+void thorduragust_newline(Application_Links *app, bool below = true) {
+    int access = AccessOpen;
+    View_Summary view = get_active_view(app, access);
+    Buffer_Summary buffer = get_buffer(app, view.buffer_id, access);
+    
+    int start = buffer_get_line_start(app, &buffer, view.cursor.line);
+    int hard_start = get_start_of_line_at_cursor(app, &view, &buffer);
+    
+    String name = make_string(buffer.file_name, buffer.file_name_len);
+    String extension = file_extension(make_string(buffer.file_name, buffer.file_name_len));
+    
+    
+    bool file_is_c = (match(extension, "cpp") || match(extension, "h") || match(extension, "c") || match(extension, "hpp") || match(extension, "cc"));
+    bool file_is_c_like = (file_is_c || match(extension, "jai") || match(extension, "java") || match(extension, "cs") ||
+                           match(extension, "rs"));
+    
+    if (file_is_c_like && c_line_comment_starts_at_position(app, &buffer, hard_start)) {
+        Hard_Start_Result after_comment = buffer_find_hard_start(app, &buffer, hard_start + 2, DEF_TAB_WIDTH);
+        hard_start = after_comment.char_pos;
+    }
+    
+    Partition *scratch = &global_part;
+    Temp_Memory temp = begin_temp_memory(scratch);
+    
+    int size = hard_start - start;
+    char *str = push_array(scratch, char, size);
+    
+    if (str != 0) {
+        buffer_read_range(app, &buffer, start, hard_start, str);
+        String previous_line_continuation = make_string(str, hard_start - start);
+        if (below)   write_string(app, make_lit_string("\n"));
+        write_string(app, previous_line_continuation);
+        if (!below)   write_string(app, make_lit_string("\n"));
+    }
+    
+    end_temp_memory(temp);
+}
+
+CUSTOM_COMMAND_SIG(vim_newline) {
+    thorduragust_newline(app, true);
+    enter_insert_mode(app, get_current_view_buffer_id(app, AccessAll));
+}
+
 CUSTOM_COMMAND_SIG(newline_then_insert_before){
     seek_beginning_of_line(app);
-    write_string(app, make_lit_string("\n"));
-    move_left(app);
+    thorduragust_newline(app, false);
+    move_up(app);
+    seek_end_of_line(app);
     enter_insert_mode(app, get_current_view_buffer_id(app, AccessAll));
 }
 
@@ -948,7 +1023,7 @@ CUSTOM_COMMAND_SIG(seek_eol_then_insert){
 
 CUSTOM_COMMAND_SIG(newline_then_insert_after){
     seek_end_of_line(app);
-    write_string(app, make_lit_string("\n"));
+    thorduragust_newline(app, true);
     enter_insert_mode(app, get_current_view_buffer_id(app, AccessOpen));
 }
 
@@ -958,6 +1033,8 @@ CUSTOM_COMMAND_SIG(enter_chord_delete){
     state.action = vimaction_delete_range;
 
     push_to_chord_bar(app, lit("d"));
+
+    vim_mode_hooks.on_enter_delete_chord(app);
 }
 
 CUSTOM_COMMAND_SIG(enter_chord_change){
@@ -1028,7 +1105,7 @@ CUSTOM_COMMAND_SIG(enter_chord_g){
 
 CUSTOM_COMMAND_SIG(move_line_exec_action){
     View_Summary view = get_active_view(app, AccessProtected);
-	int initial = view.cursor.pos;
+    int initial = view.cursor.pos;
     seek_beginning_of_line(app);
     refresh_view(app, &view);
     int line_begin = view.cursor.pos;
@@ -1292,11 +1369,11 @@ CUSTOM_COMMAND_SIG(paste_before_cursor_char) {
         seek_beginning_of_line(app);
         refresh_view(app, &view);
         int paste_pos = view.cursor.pos;
-		paste_from_register(app, &buffer, paste_pos, reg); 
+        paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos), true);
     } else {
         int paste_pos = view.cursor.pos;
-		paste_from_register(app, &buffer, paste_pos, reg); 
+        paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos + reg->text.size - 1),
                         true);
     }
@@ -1317,11 +1394,11 @@ CUSTOM_COMMAND_SIG(paste_after_cursor_char) {
         move_right(app);
         refresh_view(app, &view);
         int paste_pos = view.cursor.pos;
-		paste_from_register(app, &buffer, paste_pos, reg); 
+        paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos), true);
     } else {
         int paste_pos = view.cursor.pos + 1;
-		paste_from_register(app, &buffer, paste_pos, reg); 
+        paste_from_register(app, &buffer, paste_pos, reg); 
         view_set_cursor(app, &view, seek_pos(paste_pos + reg->text.size - 1),
                         true);
     }
@@ -1711,29 +1788,29 @@ VIM_COMMAND_FUNC_SIG(change_directory) {
 // CALL ME
 // This function should be called from your 4coder custom init hook
 START_HOOK_SIG(vim_hook_init_func) {
-	// First file replaces scratch buffer
-	if (file_count > 0) {
+    // First file replaces scratch buffer
+    if (file_count > 0) {
         View_Summary view = get_active_view(app, AccessAll);
-        Buffer_Summary buffer = create_buffer(app, files[0], strlen(files[0]), 0);
+        Buffer_Summary buffer = create_buffer(app, files[0], (int32_t)strlen(files[0]), 0);
         if (buffer.exists){
             view_set_buffer(app, &view, buffer.buffer_id, 0);
         }
-	}
-	// Rest of files open in splits
-	// TODO(chr): Emulate vim behavior here? IIRC vim will queue them up and
-	// edit them one by one.
-	for (int file_index = 1; file_index < file_count; ++file_index) {
-		new_file(app, lit("new"), make_string(files[file_index],
-				 strlen(files[file_index])), true);
-	}
+    }
+    // Rest of files open in splits
+    // TODO(chr): Emulate vim behavior here? IIRC vim will queue them up and
+    // edit them one by one.
+    for (int file_index = 1; file_index < file_count; ++file_index) {
+        new_file(app, lit("new"), make_string(files[file_index],
+                                              (i32_4tech)strlen(files[file_index])), true);
+    }
     return 0;
 }
 
 // CALL ME
 // This function should be called from your 4coder custom open file hook
 OPEN_FILE_HOOK_SIG(vim_hook_open_file_func) {
-    enter_normal_mode(app, buffer_id);
     default_file_settings(app, buffer_id);
+    enter_normal_mode(app, buffer_id);
     return 0;
 }
 
@@ -2103,6 +2180,8 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, key_back, MDFR_NONE, backspace_char);
     bind(context, 'n', MDFR_CTRL, word_complete);
 
+    bind(context, '\n', MDFR_NONE, vim_newline);
+
     bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
     bind(context, key_esc, MDFR_SHIFT, enter_normal_mode_on_current);
     bind(context, key_esc, MDFR_CTRL, enter_normal_mode_on_current);
@@ -2121,6 +2200,7 @@ void vim_get_bindings(Bind_Helper* context) {
     bind(context, key_back, MDFR_NONE, backspace_char);
     bind(context, 'n', MDFR_CTRL, word_complete);
 
+    bind(context, '\n', MDFR_NONE, vim_newline);
     bind(context, key_esc, MDFR_NONE, enter_normal_mode_on_current);
 
     end_map(context);
